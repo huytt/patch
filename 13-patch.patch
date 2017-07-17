@@ -1,0 +1,535 @@
+Index: app/Modules/Batdongsansg24h/Composers/loadRegion.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Composers/loadRegion.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Composers/loadRegion.php	(revision 54)
+@@ -10,27 +10,44 @@
+ 
+ 
+ use App\Modules\Core\BDS_SG24h\Repositories\DistrictRepository;
++use App\Modules\Core\BDS_SG24h\Repositories\StreetRepository;
++use App\Modules\Core\BDS_SG24h\Repositories\WardRepository;
++
+ class loadRegion
+ {
+     protected $disRepo;
++    protected $wardRepo;
++    protected $streetRepo;
+ 
+     public function __construct(
+         DistrictRepository $districtRepository
++        ,WardRepository $wardRepository
++        ,StreetRepository $streetRepository
+     )
+     {
+         $this->disRepo = $districtRepository;
++        $this->wardRepo = $wardRepository;
++        $this->streetRepo = $streetRepository;
+     }
+ 
+     public function compose($view){
+         $viewdata= $view->getData();
+ 
+-        $disId = isset($viewdata['distid'])?$viewdata['distid']:null;
++        $curDist = isset($viewdata['curDist'])?$viewdata['curDist']:null;
++        $curWard = isset($viewdata['curWard'])?$viewdata['curWard']:null;
++        $curStreet = isset($viewdata['curStreet'])?$viewdata['curStreet']:null;
+ 
+         $districts = $this->disRepo->getAllDistrictsCache();
++        $wards = $this->wardRepo->getWardsCache($curDist);
++        $streets = $this->streetRepo->getStreetsCache($curDist);
+ 
+         return $view->with([
+             'districts' => $districts,
+-            'curDist' => $disId
++            'wards' => $wards,
++            'streets' => $streets,
++            'curDist' => $curDist,
++            'curWard' => $curWard,
++            'curStreet' => $curStreet
+         ]);
+ 
+     }
+Index: app/Modules/Batdongsansg24h/Composers/partialProperties.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Composers/partialProperties.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Composers/partialProperties.php	(revision 54)
+@@ -23,6 +23,7 @@
+     public function compose($view){
+         $perpage = isset($view['perpage'])?$view['perpage']:Constant::BDS_PER_PAGE_DEFAULT;
+         $scope = isset($view['scope'])?$view['scope']:null;
++        $isEdit = isset($view['isEdit'])?$view['isEdit']:false;
+ 
+         if(!is_null($scope)){
+             $paginator = $this->propRepo->paginateWhereScope($scope, $perpage,['*'],'date_on_market','desc');
+@@ -33,7 +34,8 @@
+         }
+ 
+         return $view->with([
+-            'paginator' => $paginator
++            'paginator' => $paginator,
++            'isEdit' => $isEdit
+         ]);
+     }
+ 
+Index: app/Modules/Batdongsansg24h/Controllers/PropertyController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 54)
+@@ -13,6 +13,7 @@
+ use App\Modules\Core\BDS_SG24h\Repositories\DistrictRepository;
+ use App\Modules\Core\BDS_SG24h\Repositories\PropertyRepository;
+ use App\Modules\Core\Utils\UtilHelper;
++use Auth;
+ use Illuminate\Routing\Controller;
+ use Symfony\Component\HttpFoundation\Request;
+ 
+@@ -28,7 +29,13 @@
+     }
+ 
+     public function info($id){
+-        $prop = $this->propRepo->find($id);
++        $prop = $this->propRepo->findByField('id',$id)->first();
++
++        if(is_null($prop)) return redirect()->route('Batdongsansg24hHome.index');
++
++        $user = Auth::guard('bds_sg24h.users')->user();
++        $allowEdit = (isset($user) && ($user->id == $prop->owner_user_id || $user->phone == $prop->owner_user_phone));
++        $allowEdit = true;
+ 
+         $relate_props = null;
+         $area_info = [];
+@@ -52,7 +59,8 @@
+         return view("Batdongsansg24h::property.info")->with([
+             'prop' => $prop,
+             'relate_props'=> $relate_props,
+-            'area_info' => $area_info
++            'area_info' => $area_info,
++            'allowEdit' => $allowEdit
+         ]);
+     }
+ }
+\ No newline at end of file
+Index: app/Modules/Batdongsansg24h/Controllers/UserController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 54)
+@@ -8,7 +8,9 @@
+ 
+ namespace App\Modules\Batdongsansg24h\Controllers;
+ 
++use App\Modules\Batdongsansg24h\Enum;
+ use App\Modules\Batdongsansg24h\Requests\PropertyCreateRequest;
++use App\Modules\Batdongsansg24h\Requests\PropertyUpdateRequest;
+ use App\Modules\Batdongsansg24h\Requests\UserCreateRequest;
+ use App\Modules\Batdongsansg24h\Requests\UserRequest;
+ use App\Modules\Batdongsansg24h\Requests\UserUpdateRequest;
+@@ -25,6 +27,7 @@
+ use App\Modules\Core\Constant;
+ use App\Modules\Core\Inf\IEmailHandler;
+ use App\Modules\Core\Utils\UtilHelper;
++use Auth;
+ use Carbon\Carbon;
+ use Illuminate\Http\Request;
+ use Illuminate\Routing\Controller;
+@@ -92,6 +95,32 @@
+         return view('Batdongsansg24h::user.postMsg');
+     }
+ 
++    public function edit_postMsg($user_id, $user_phone,$msg_id){
++        $user = Auth::guard('bds_sg24h.users')->user();
++        $isEdit = (isset($user) && ($user->id == $user_id || $user->phone == $user_phone));
++
++        if(!$isEdit) return redirect()->route('Batdongsansg24hHome.index');
++
++//        $isEdit = true;
++        $prop = $this->propRepo->scopeQuery(function($query) use ($user_id, $user_phone,$msg_id){
++            return $query->where(function($subWhere) use($user_id, $user_phone){
++                $subWhere->where('owner_user_id',$user_id)->orWhere('owner_user_phone',$user_phone);
++            })->where('id', $msg_id);
++        })->first();
++
++        if(is_null($prop)) return redirect()->route('Batdongsansg24hHome.index');
++
++        $curCurrency = null;
++        foreach (Enum::$CURRENCY as $key => $value){
++            if(strpos(mb_strtolower($prop->requested_price_text,'UTF-8'), $key) !== false){
++                $curCurrency = $key;
++                break;
++            }
++        }
++
++        return view('Batdongsansg24h::user.postMsg', compact('prop','isEdit','curCurrency'));
++    }
++
+     public function success_signup(){
+         return view('Batdongsansg24h::user.success_signup');
+     }
+@@ -392,6 +421,41 @@
+         }
+     }
+ 
++    public function updatePostMsg(PropertyUpdateRequest $request, $msg_id)
++    {
++        try {
++            $this->propValidator->with($request->all())->passesOrFail(ValidatorInterface::RULE_UPDATE);
++
++            // huytt: fix template pass wrong param order
++            $prop = $this->propRepo->update($request->all(), $msg_id);
++
++            $response = [
++                'error'   => false,
++                'message' => 'Bài viết đã được cập nhật.',
++                'data'    => $prop->toArray(),
++            ];
++
++            if ($request->wantsJson()) {
++
++                return response()->json($response);
++            }
++
++            //return redirect()->back()->with('message', $response['message']);
++            return redirect()->back()->with('success', $response['message']);
++        } catch (ValidatorException $e) {
++
++            if ($request->wantsJson()) {
++
++                return response()->json([
++                    'error'   => true,
++                    'message' => $e->getMessageBag()
++                ]);
++            }
++
++            return redirect()->back()->withErrors($e->getMessageBag())->withInput();
++        }
++    }
++
+     /**
+      * Update the specified resource in storage.
+      *
+Index: app/Modules/Batdongsansg24h/Enum.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Enum.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Enum.php	(revision 54)
+@@ -6,4 +6,6 @@
+ {
+     // 1-Can ho, 2-nha rieng, 3-nha mat pho, 4-dat
+     static $PROPERTY_TYPES = ['Loại nhà đất', 'Bán Căn Hộ', 'Bán Nhà Riêng', 'Bán Nhà Mặt Phố', 'Bán Đất', 'Cho Thuê'];
++
++    static $CURRENCY = ['tỷ' => 1000000000, 'triệu' => 1000000, 'triệu/tháng' => 1000000, 'Thỏa thuận' => -1];
+ }
+\ No newline at end of file
+Index: app/Modules/Batdongsansg24h/Requests/PropertyUpdateRequest.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Requests/PropertyUpdateRequest.php	(nonexistent)
++++ app/Modules/Batdongsansg24h/Requests/PropertyUpdateRequest.php	(revision 54)
+@@ -0,0 +1,31 @@
++<?php
++
++namespace App\Modules\Batdongsansg24h\Requests;
++
++use App\Http\Requests\Request;
++use Auth;
++
++class PropertyUpdateRequest extends Request
++{
++    /**
++     * Determine if the user is authorized to make this request.
++     *
++     * @return bool
++     */
++    public function authorize()
++    {
++        return Auth::guard(\Session::get('guard'))->check();
++    }
++
++    /**
++     * Get the validation rules that apply to the request.
++     *
++     * @return array
++     */
++    public function rules()
++    {
++        return [
++            //
++        ];
++    }
++}
+Index: app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 54)
+@@ -18,6 +18,11 @@
+                 <div class="col-md-3 col-sm-6 col-xs-12">Diện tích: <span class="pm-info"> {{$prop->acreage}}</span></div>
+                 <div class="col-md-6 col-sm-12 col-xs-12">Quận/Huyện: <span class="pm-info"> {{$prop->getDisctrictName()}}, Hồ Chí Minh</span></div>
+             </div>
++            @if(isset($isEdit)&&$isEdit)
++            <div class="row">
++                <div class="col-xs-12"><a href="{{URL::route('Batdongsansg24hUser.edit_postMsg',[$prop->owner_user_id,$prop->owner_user_phone,$prop->id])}}" class="btn-sm btn-primary pull-right" style="text-decoration: none; margin-top: 5px"><i class="ace-icon fa fa-edit icon-animated-vertical"></i> Chỉnh sửa bài viết</a></div>
++            </div>
++            @endif
+         </div>
+     </div>
+     </a>
+Index: app/Modules/Batdongsansg24h/Views/property/info.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 54)
+@@ -47,6 +47,12 @@
+ @endsection
+ 
+ @section('main-content-section')
++    @if(isset($allowEdit)&&$allowEdit)
++        <div class="row">
++            <div class="col-xs-12"><a href="{{URL::route('Batdongsansg24hUser.edit_postMsg',[$prop->owner_user_id,$prop->owner_user_phone,$prop->id])}}" class="btn-sm btn-primary pull-left" style="text-decoration: none; margin-bottom: 10px;"><i class="ace-icon fa fa-edit icon-animated-vertical"></i> Chỉnh sửa bài viết</a></div>
++        </div>
++    @endif
++
+     {{--Property detail--}}
+     <div class="row property-detail">
+         <div class="col-xs-12">
+@@ -139,6 +145,12 @@
+         </div>
+     </div>
+     {{--End Property specific--}}
++    @if(isset($allowEdit)&&$allowEdit)
++        <div class="row">
++            <div class="col-xs-12"><a href="{{URL::route('Batdongsansg24hUser.edit_postMsg',[$prop->owner_user_id,$prop->owner_user_phone,$prop->id])}}" class="btn-sm btn-primary pull-left" style="text-decoration: none; margin-top: 10px;"><i class="ace-icon fa fa-edit icon-animated-vertical"></i> Chỉnh sửa bài viết</a></div>
++        </div>
++    @endif
++
+ 
+     <div class="row pm-relation">
+         <h2>Tin tương tự </h2>
+Index: app/Modules/Batdongsansg24h/Views/region_template/post_msg_region.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/region_template/post_msg_region.blade.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Views/region_template/post_msg_region.blade.php	(revision 54)
+@@ -13,12 +13,18 @@
+             <div class="col-sm-4 col-xs-6">
+                 <select class="form-control" name="ward_id">
+                     <option value="">Phường/Xã</option>
++                    @foreach($wards as $ward)
++                        <option value="{{$ward->id}}" {{(old('ward_id') == $ward->id)||($ward->id == $curWard)?'selected':''}}>{{$ward->ward_name}}</option>
++                    @endforeach
+                 </select>
+             </div>
+ 
+             <div class="col-sm-4 col-xs-12">
+                 <select class="form-control" name="street_id">
+                     <option value="">Đường</option>
++                    @foreach($streets as $street)
++                        <option value="{{$street->id}}" {{(old('street_id') == $street->id)||($street->id == $curStreet)?'selected':''}}>{{$street->street_name}}</option>
++                    @endforeach
+                 </select>
+             </div>
+         </div>
+Index: app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php	(revision 54)
+@@ -15,7 +15,14 @@
+                 <i class="ace-icon fa fa-home home-icon"></i>
+                 <a href="{{URL::route('Batdongsansg24hHome.index')}}">Trang chủ</a>
+             </li>
++            @if(isset($isEdit)&&$isEdit)
++                <li>
++                    <a href="{{URL::route('Batdongsansg24hUserProfile.postedMsg',[$prop->owner_user_id])}}">Tin đã đăng</a>
++                </li>
++                <li class="active">Chỉnh sửa bài viết</li>
++            @else
+             <li class="active">Đăng tin</li>
++            @endif
+         </ul><!-- /.breadcrumb -->
+     </div>
+     {{--End Bread crumb--}}
+@@ -29,7 +36,7 @@
+                 <div class="row">
+                     <div class="col-xs-12">
+                         <!-- PAGE CONTENT BEGINS -->
+-                        <form id="postMsg_form" enctype="multipart/form-data" class="form-horizontal" role="form" method="post" action="{{URL::route('Batdongsansg24hUser.storePostMsg')}}">
++                        <form id="postMsg_form" enctype="multipart/form-data" class="form-horizontal" role="form" method="post" action="{{isset($isEdit)&&$isEdit?URL::route('Batdongsansg24hUser.updatePostMsg',[$prop->id]):URL::route('Batdongsansg24hUser.storePostMsg')}}">
+                             {{csrf_field()}}
+                             <div class="form-group">
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"></label>
+@@ -41,6 +48,11 @@
+                                             @endforeach
+                                         </div>
+                                     @endif
++
++                                    @if (Session::has('success'))
++                                        <div class="alert alert-success" style="margin-bottom: 0">{!! Session::get('success') !!}</div>
++                                    @endif
++
+                                 </div>
+                             </div>
+ 
+@@ -53,7 +65,7 @@
+                                 <div class="col-sm-9">
+                                     <select class="col-sm-6 col-xs-12" name="property_type_code">
+                                         @foreach(\App\Modules\Batdongsansg24h\Enum::$PROPERTY_TYPES as $index => $type)
+-                                            <option value="{{$index}}" {{old('property_type_code') == $index?'selected':''}}>{{$type}}</option>
++                                            <option value="{{$index}}" {{(isset($isEdit)&&$isEdit?($prop->property_type_code == $index ? 'selected':''):(old('property_type_code') == $index?'selected':''))}}>{{$type}}</option>
+                                         @endforeach
+                                     </select>
+                                 </div>
+@@ -62,18 +74,22 @@
+                             <div class="form-group">
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Tiêu đề: </label>
+                                 <div class="col-sm-9">
+-                                    <input type="text" name="property_title" class="form-control" value="{{old('property_title')}}">
++                                    <input type="text" name="property_title" class="form-control" value="{{isset($isEdit)&&$isEdit? $prop->property_title:old('property_title')}}">
+                                 </div>
+                             </div>
+                             <div class="form-group">
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Nội dung: </label>
+                                 <div class="col-sm-9">
+                                     <div class="wysiwyg-editor" id="property_desc_editor"></div>
+-                                    <input type="hidden" name="property_desc" value="{{old('property_desc')}}">
++                                    <input type="hidden" name="property_desc" value="{{isset($isEdit)&&$isEdit? $prop->property_desc:old('property_desc')}}">
+                                 </div>
+                             </div>
+ 
+-                            {!! View::make('Batdongsansg24h::region_template.post_msg_region')->render() !!}
++                            {!! View::make('Batdongsansg24h::region_template.post_msg_region',[
++                                'curDist' => isset($prop)?$prop->district_id:null,
++                                'curWard' => isset($prop)?$prop->ward_id:null,
++                                'curStreet' => isset($prop)?$prop->street_id:null
++                            ])->render() !!}
+ 
+                             <div class="form-group">
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Giá: </label>
+@@ -81,15 +97,16 @@
+                                     <div class="row">
+                                         <input type="hidden" name="requested_price_text" class="form-control">
+                                         <input type="hidden" step="0.01" name="requested_price_value" class="form-control">
+-                                        <div class="col-xs-4"><input type="number" step="0.01" placeholder="1.5" name="requested_price" value="{{old('requested_price')}}" class="form-control"></div>
++                                        <?php $currency = \App\Modules\Batdongsansg24h\Enum::$CURRENCY;?>
++                                        <div class="col-xs-4"><input type="number" step="0.01" placeholder="1.5" name="requested_price" value="{{isset($isEdit)&&$isEdit?(isset($currency[$curCurrency])&&$currency[$curCurrency] == -1?'':$prop->requested_price_value/$currency[$curCurrency]):old('requested_price')}}" class="form-control"></div>
+                                         <div class="col-xs-4">
+-                                            <?php $currency = ['tỷ' => 1000000000, 'triệu' => 1000000, 'triệu/tháng' => 1000000, 'Thỏa thuận' => -1]?>
+                                             <select class="form-control" name="currency" id="form-field-select-1">
+                                                 @foreach($currency as $key => $value)
+-                                                    <option value="{{$value}}" {{old('currency') == $value?'selected':''}}>{{$key}}</option>
++                                                    <option value="{{$value}}" {{isset($isEdit)&&$isEdit?($curCurrency == $key?'selected':''):(old('currency') == $value?'selected':'')}}>{{$key}}</option>
+                                                 @endforeach
+                                             </select>
+                                         </div>
++
+                                     </div>
+                                 </div>
+                             </div>
+@@ -97,8 +114,8 @@
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Kích thước: </label>
+                                 <div class="col-sm-9">
+                                     <div class="row">
+-                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_width" placeholder="3.5" value="{{old('property_width')}}" class="col-sm-12"></div>
+-                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_height" placeholder="15.7" value="{{old('property_height')}}" class="col-sm-12"></div>
++                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_width" placeholder="3.5" value="{{isset($isEdit)&&$isEdit? $prop->property_width:old('property_width')}}" class="col-sm-12"></div>
++                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_height" placeholder="15.7" value="{{isset($isEdit)&&$isEdit? $prop->property_height:old('property_height')}}" class="col-sm-12"></div>
+                                         <div class="col-xs-6" style="line-height: 30px;">m² (Chiều ngang x Chiều dài)</div>
+                                         <input type="hidden" name="acreage">
+                                     </div>
+@@ -107,7 +124,7 @@
+                             <div class="form-group">
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Địa chỉ: </label>
+                                 <div class="col-sm-9">
+-                                    <input type="text" name="property_address" value="{{old('property_address')}}" class="form-control">
++                                    <input type="text" name="property_address" value="{{isset($isEdit)&&$isEdit? $prop->property_address:old('property_address')}}" class="form-control">
+                                 </div>
+                             </div>
+                             <div class="form-group">
+@@ -127,10 +144,15 @@
+                                 <div class="col-md-offset-3 col-md-9">
+                                     <button class="btn btn-info" type="submit">
+                                         <i class="ace-icon fa fa-check bigger-110"></i>
+-                                        Đăng tin
++                                        {{isset($isEdit)&&$isEdit?'Cập nhật':'Đăng tin'}}
+                                     </button>
+ 
+-                                    <a href="{{URL::route('Batdongsansg24hHome.index')}}" class="btn" type="reset">
++                                    <a href="{{isset($isEdit)&&$isEdit?URL::route('Batdongsansg24hProperty.info',[$prop->id, $prop->property_alias]):URL::route('Batdongsansg24hHome.index')}}" class="btn btn-warning" type="reset">
++                                        <i class="ace-icon fa fa-eye bigger-110"></i>
++                                        Xem lại
++                                    </a>
++
++                                    <a href="{{isset($isEdit)&&$isEdit?URL::route('Batdongsansg24hUserProfile.postedMsg',[$prop->owner_user_id]):URL::route('Batdongsansg24hHome.index')}}" class="btn" type="reset">
+                                         <i class="ace-icon fa bigger-110"></i>
+                                         Hủy
+                                     </a>
+Index: app/Modules/Batdongsansg24h/Views/user/profile/info.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/profile/info.blade.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Views/user/profile/info.blade.php	(revision 54)
+@@ -44,7 +44,7 @@
+         <div class="form-group">
+             <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Số điện thoại: </label>
+             <div class="col-sm-6">
+-                <input type="text" class="form-control" name="phone" placeholder="Số điện thoại" value="{{Auth::guard('bds_sg24h.users')->user()->phone}}"/>
++                <input type="text" disabled class="form-control" name="phone" placeholder="Số điện thoại" value="{{Auth::guard('bds_sg24h.users')->user()->phone}}"/>
+             </div>
+         </div>
+ 
+Index: app/Modules/Batdongsansg24h/Views/user/profile/posted_message.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/profile/posted_message.blade.php	(revision 53)
++++ app/Modules/Batdongsansg24h/Views/user/profile/posted_message.blade.php	(revision 54)
+@@ -20,6 +20,7 @@
+             ->where(function($subQuery) use ($id, $phone){
+                 return $subQuery->where('owner_user_id','=', $id)->orwhere('owner_user_phone','=',$phone);
+             });
+-        }
++        },
++        'isEdit' => true
+     ])->render() !!}
+ @endsection
+Index: app/Modules/Batdongsansg24h/routes.php
+===================================================================
+--- app/Modules/Batdongsansg24h/routes.php	(revision 53)
++++ app/Modules/Batdongsansg24h/routes.php	(revision 54)
+@@ -31,6 +31,9 @@
+             Route::get('/dang-tin',['as'=>'Batdongsansg24hUser.postMsg','uses' => 'UserController@postMsg']);
+             Route::post('/dang-tin',['as'=>'Batdongsansg24hUser.storePostMsg','uses' => 'UserController@storePostMsg']);
+ 
++            Route::get('/chinh-sua-bai-viet/{user_id}/{user_phone}/{msg_id}',['as'=>'Batdongsansg24hUser.edit_postMsg','uses' => 'UserController@edit_postMsg']);
++            Route::post('/chinh-sua-bai-viet/{msg_id}',['as'=>'Batdongsansg24hUser.updatePostMsg','uses' => 'UserController@updatePostMsg']);
++
+             Route::get('/tai-khoan/{userId}/tin-da-dang',['as'=>'Batdongsansg24hUserProfile.postedMsg','uses' => 'UserController@profile_postedMsg']);
+             Route::get('/tai-khoan/thong-tin-co-ban',['as'=>'Batdongsansg24hUserProfile.info','uses' => 'UserController@profile_info']);
+         });
+Index: public/batdongsansg24h/css/app.css
+===================================================================
+--- public/batdongsansg24h/css/app.css	(revision 53)
++++ public/batdongsansg24h/css/app.css	(revision 54)
+@@ -86,6 +86,10 @@
+     padding: 12px;
+ }
+ 
++.bds-main-content .search-media .media-left{
++    float: left;
++}
++
+ .bds-main-content .search-media h4{
+     font-size: 15px;
+     line-height: 20px;
+Index: public/batdongsansg24h/js/userscreen.js
+===================================================================
+--- public/batdongsansg24h/js/userscreen.js	(revision 53)
++++ public/batdongsansg24h/js/userscreen.js	(revision 54)
+@@ -41,7 +41,7 @@
+         $(document).ready(function () {
+             $('#property_desc_editor').html($("input[name='property_desc']").val());
+ 
+-            load_ward_street($('#region-info select[name="district_id"]').val());
++            // load_ward_street($('#region-info select[name="district_id"]').val());
+         });
+ 
+         function showErrorAlert (reason, detail) {
+@@ -154,7 +154,7 @@
+                 requested_price_text.val(requested_price.val() +' '+ currency.find('option:selected').text());
+             }
+             var acr_cal = parseFloat(property_width.val()) * parseFloat(property_height.val());
+-            acreage.val(acr_cal.toFixed(2) + 'm²');
++            acreage.val(acr_cal.toFixed(0) + 'm²');
+         });
+ 
+         $('#region-info select[name="district_id"]').on('change', function (e) {

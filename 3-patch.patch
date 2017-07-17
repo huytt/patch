@@ -1,0 +1,172 @@
+Index: app/Modules/Batdongsansg24h/Controllers/FilterController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 33)
++++ app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 34)
+@@ -37,22 +37,26 @@
+     }
+     
+     public function filter_district($dis_alias, $distId, Request $request){
+-        return $this->generate_search_filter_view(null, $distId, null, $request);
++        return $this->generate_search_filter_view($request, null, $distId);
+     }
+ 
+     public function filter_district_ward($dis_alias, $ward_alias, $distId, $wardId, Request $request){
+-        return $this->generate_search_filter_view(null, $distId, $wardId, $request);
++        return $this->generate_search_filter_view($request, null, $distId, $wardId);
+     }
+ 
+     public function filter_proptype_district($pt_alias, $dis_alias, $pt_code, $distId, Request $request){
+-        return $this->generate_search_filter_view($pt_code, $distId, null, $request);
++        return $this->generate_search_filter_view($request, $pt_code, $distId);
+     }
+ 
+     public function filter_proptype_district_ward($pt_alias, $dis_alias, $ward_alias, $pt_code, $distId, $wardId, Request $request){
+-        return $this->generate_search_filter_view($pt_code, $distId, $wardId, $request);
++        return $this->generate_search_filter_view($request, $pt_code, $distId, $wardId);
+     }
+ 
+-    public function generate_search_filter_view($pt_code, $distId, $wardId, Request $request){
++    public function filter_proptype_street($pt_alias, $street_alias, $dis_alias, $pt_code, $streetId, $dis_id, Request $request){
++        return $this->generate_search_filter_view($request, $pt_code, $dis_id, null, $streetId);
++    }
++
++    public function generate_search_filter_view(Request $request, $pt_code, $distId, $wardId = null, $streetId = null){
+ //                dd($pt_alias, $dis_alias, $distId, $ward_alias, $pt_code, $distId, $wardId);
+         $condition = [];
+         $from_price = $request->input('from_price');
+@@ -63,11 +67,12 @@
+         empty($pt_code)?:$curPt = $condition['property_type_code'] = $pt_code;
+         empty($distId)?:$curDist = $condition['district_id'] = $distId;
+         empty($wardId)?:$curWard = $condition['ward_id'] = $wardId;
++        empty($streetId)?:$curStreet = $condition['street_id'] = $streetId;
+ 
+         $curFromPrice = $from_price;
+         $curToPrice = $to_price;
+ //        dd($condition);
+-        return view('Batdongsansg24h::home.search-filter', compact('condition', 'curDist', 'curWard', 'curPt','curFromPrice','curToPrice'));
++        return view('Batdongsansg24h::home.search-filter', compact('condition', 'curDist', 'curWard', 'curPt', 'curStreet', 'curFromPrice', 'curToPrice'));
+     }
+ 
+     public function search(Request $request){
+Index: app/Modules/Batdongsansg24h/Controllers/PropertyController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 33)
++++ app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 34)
+@@ -35,7 +35,7 @@
+ 
+         if($prop->street_id > 0){
+             $relate_props = $this->propRepo->findWhereLimit(['street_id' => $prop->street_id, ['id','!=',$prop->id]],10);
+-        } else if($prop->ward_id > 0) {
++        } else if(count($relate_props) < 3 && $prop->ward_id > 0) {
+             $relate_props = $this->propRepo->findWhereLimit(['ward_id' => $prop->ward_id, ['id','!=',$prop->id]],10);
+         } else {
+             $relate_props = $this->propRepo->findWhereLimit(['district_id' => $prop->district_id, ['id','!=',$prop->id]],10);
+Index: app/Modules/Batdongsansg24h/Views/layouts/layout-master.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/layouts/layout-master.blade.php	(revision 33)
++++ app/Modules/Batdongsansg24h/Views/layouts/layout-master.blade.php	(revision 34)
+@@ -8,16 +8,22 @@
+     <meta name="robots" content="noodp">
+ 
+     @section('meta-SEO')
+-    <meta name="abstract" content="Thông tin nhà đất Hồ Chí Minh">
+-    <meta name="classification" content="Bất động sản Hồ Chí Minh">
+-    <meta name="description" content="Kênh thông tin số 1 về bất động sản tại Việt Nam: mua bán nhà đất, cho thuê nhà đất, văn phòng, căn hộ, biệt thự, chung cư. Các lĩnh vực liên quan đến bất động sản: xây dựng, nội thất, kiến trúc, ngoại thất, phong thuỷ, luật pháp, tư vấn.">
+-    <meta name="keywords" content="Kênh, thông, tin, số, 1, về, bất, động, sản">
+-    <meta property="og:locale" content="vi_VN">
+-    <meta property="og:type" content="website">
+-    <meta property="og:title" content="Nhà đất | Mua bán nhà đất | Cho thuê nhà đất | batdongsansg24h.com">
+-    <meta property="og:description" content="Kênh thông tin số 1 về bất động sản tại Việt Nam: mua bán nhà đất, cho thuê nhà đất, văn phòng, căn hộ, biệt thự, chung cư. Các lĩnh vực liên quan đến bất động sản: xây dựng, nội thất, kiến trúc, ngoại thất, phong thuỷ, luật pháp, tư vấn.">
+-    <meta property="og:url" content="http://batdongsansg24h.com/">
+-    <meta property="og:site_name" content="Nhà đất | Mua bán nhà đất | Cho thuê nhà đất | batdongsansg24h.com">
++        <meta name="abstract" content="Thông tin nhà đất Hồ Chí Minh">
++        <meta name="classification" content="Bất động sản Hồ Chí Minh">
++        <meta name="area" content="Nhà đất và bất động sản">
++        <meta name="placename" content="Việt Nam">
++        <meta name="author" content="Batdongsansg24h.com">
++        <meta name="copyright" content="©2007 Batdongsansg24h.com">
++        <meta name="owner" content="Batdongsansg24.com">
++        <meta name="generator" content="huytt_khtn">
++        <meta name="description" content="Kênh thông tin số 1 về bất động sản tại Việt Nam: mua bán nhà đất, cho thuê nhà đất, văn phòng, căn hộ, biệt thự, chung cư. Các lĩnh vực liên quan đến bất động sản: xây dựng, nội thất, kiến trúc, ngoại thất, phong thuỷ, luật pháp, tư vấn.">
++        <meta name="keywords" content="Kênh, thông, tin, số, 1, về, bất, động, sản">
++        <meta property="og:locale" content="vi_VN">
++        <meta property="og:type" content="website">
++        <meta property="og:title" content="Nhà đất | Mua bán nhà đất | Cho thuê nhà đất | batdongsansg24h.com">
++        <meta property="og:description" content="Kênh thông tin số 1 về bất động sản tại Việt Nam: mua bán nhà đất, cho thuê nhà đất, văn phòng, căn hộ, biệt thự, chung cư. Các lĩnh vực liên quan đến bất động sản: xây dựng, nội thất, kiến trúc, ngoại thất, phong thuỷ, luật pháp, tư vấn.">
++        <meta property="og:url" content="http://batdongsansg24h.com/">
++        <meta property="og:site_name" content="Nhà đất | Mua bán nhà đất | Cho thuê nhà đất | batdongsansg24h.com">
+     @show
+ 
+     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+Index: app/Modules/Batdongsansg24h/Views/property/info.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 33)
++++ app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 34)
+@@ -4,6 +4,27 @@
+ 
+ @section('role-section','propertyInfo')
+ 
++@section('title-section', $prop->property_title)
++
++@section('meta-SEO')
++    <meta name="abstract" content="Thông tin nhà đất Hồ Chí Minh">
++    <meta name="classification" content="Bất động sản Hồ Chí Minh">
++    <meta name="area" content="Nhà đất và bất động sản">
++    <meta name="placename" content="Việt Nam">
++    <meta name="author" content="Batdongsansg24h.com">
++    <meta name="copyright" content="©2007 Batdongsansg24h.com">
++    <meta name="owner" content="Batdongsansg24.com">
++    <meta name="generator" content="huytt_khtn">
++    <meta name="description" content="{{$prop->getBriefDesc()}}">
++    <meta name="keywords" content="Kênh, thông, tin, số, 1, về, bất, động, sản, {{$prop->property_title}}">
++    <meta property="og:locale" content="vi_VN">
++    <meta property="og:type" content="website">
++    <meta property="og:title" content="Nhà đất | Mua bán nhà đất | Cho thuê nhà đất | batdongsansg24h.com">
++    <meta property="og:description" content="{{$prop->getBriefDesc()}}">
++    <meta property="og:url" content="http://batdongsansg24h.com/">
++    <meta property="og:site_name" content="{{$prop->property_title}}">
++@endsection
++
+ @section('bread-crumb-section')
+     {{--Bread crumb--}}
+     {{--<div class="breadcrumbs ace-save-state" id="breadcrumbs">--}}
+Index: app/Modules/Batdongsansg24h/Views/user/profile/info.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/profile/info.blade.php	(revision 33)
++++ app/Modules/Batdongsansg24h/Views/user/profile/info.blade.php	(revision 34)
+@@ -4,7 +4,6 @@
+ 
+ @section('role-section','info')
+ 
+-
+ @section('breadcrumb-section')
+     <div class="breadcrumbs ace-save-state" id="breadcrumbs">
+         <ul class="breadcrumb">
+Index: app/Modules/Batdongsansg24h/routes.php
+===================================================================
+--- app/Modules/Batdongsansg24h/routes.php	(revision 33)
++++ app/Modules/Batdongsansg24h/routes.php	(revision 34)
+@@ -20,8 +20,9 @@
+         Route::get('/mua-ban-bat-dong-san-nha-dat-{dis_alias}/{distId}',['as'=>'Batdongsansg24hFilter.filter_district','uses' => 'FilterController@filter_district']);
+         Route::get('/mua-ban-bat-dong-san-nha-dat-{dis_alias}/{ward_alias}/{distId}/{wardId}',['as'=>'Batdongsansg24hFilter.filter_district_ward','uses' => 'FilterController@filter_district_ward']);
+ 
+-        Route::get('/{pt_alias}/{dis_alias}/{pt_code}/{distId}',['as'=>'Batdongsansg24hFilter.filter_proptype_district','uses' => 'FilterController@filter_proptype_district']);
+-        Route::get('/{pt_alias}/{dis_alias}/{ward_alias}/{pt_code}/{distId}/{wardId}',['as'=>'Batdongsansg24hFilter.filter_proptype_district_ward','uses' => 'FilterController@filter_proptype_district_ward']);
++        Route::get('/loc-pt-d/{pt_alias}/{dis_alias}/{pt_code}/{distId}',['as'=>'Batdongsansg24hFilter.filter_proptype_district','uses' => 'FilterController@filter_proptype_district']);
++        Route::get('/loc-pt-d-w/{pt_alias}/{ward_alias}/{dis_alias}/{pt_code}/{distId}/{wardId}',['as'=>'Batdongsansg24hFilter.filter_proptype_district_ward','uses' => 'FilterController@filter_proptype_district_ward']);
++        Route::get('/loc-pt-d-st/{pt_alias}/{street_alias}/{dis_alias}/{pt_code}/{streetId}/{distId}',['as'=>'Batdongsansg24hFilter.filter_proptype_street','uses' => 'FilterController@filter_proptype_street']);
+ 
+         Route::get('/property/{id}/{alias}',['as'=>'Batdongsansg24hProperty.info','uses' => 'PropertyController@info']);
+ 
+Index: app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustomEloquent.php
+===================================================================
+--- app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustomEloquent.php	(revision 33)
++++ app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustomEloquent.php	(revision 34)
+@@ -138,6 +138,7 @@
+             $this->orderBy($sortbyField, $direction);
+         }
+ 
++//        dd($this->getSql($this->model->toSql(),$this->model->getBindings()));
+         return $this->makePaginate($builderTakeObj, 't.'.$primaryKey, $total, $perPage, $path, $page, $pageName);
+     }
+ 

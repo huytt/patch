@@ -1,0 +1,12 @@
+Index: app/Modules/Batdongsansg24h/Controllers/UserController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 48)
++++ app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 49)
+@@ -322,6 +322,7 @@
+ 
+             $form_data['date_on_market'] = Carbon::now('ICT');
+             $form_data['property_alias'] = UtilHelper::slug($request->input('property_title'));
++            $form_data['msg_sku'] = uniqid();
+ 
+             $prop = $this->propRepo->create($form_data);
+ 

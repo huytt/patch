@@ -1,0 +1,298 @@
+Index: .env
+===================================================================
+--- .env	(revision 31)
++++ .env	(revision 32)
+@@ -3,16 +3,18 @@
+ APP_KEY=base64:OSCvs7HCKQJgJME4bm4qIV3mkl9bfEcKYRP/DjlkIZk=
+ APP_URL=http://localhost
+ 
+-DB_CONNECTION=mss
++DB_CONNECTION=BDS_SG24h
+ #DB_HOST=103.27.239.212
+-DB_HOST=192.168.1.77
+ DB_PORT=3306
+ DB_DATABASE=huytt_batdongsansg24h
+-DB_USERNAME=root
+-DB_PASSWORD=''
+ #DB_USERNAME=huytt
+ #DB_PASSWORD=huyphuong2223
+ 
++DB_HOST=192.168.1.77
++DB_USERNAME=root
++DB_PASSWORD=''
++
++
+ TIME_ZONE=ICT
+ CACHE_DRIVER=file
+ SESSION_DRIVER=file
+Index: app/Modules/Batdongsansg24h/Controllers/PropertyController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 31)
++++ app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 32)
+@@ -9,22 +9,29 @@
+ namespace App\Modules\Batdongsansg24h\Controllers;
+ 
+ 
++use App\Modules\Batdongsansg24h\Enum;
++use App\Modules\Core\BDS_SG24h\Repositories\DistrictRepository;
+ use App\Modules\Core\BDS_SG24h\Repositories\PropertyRepository;
++use App\Modules\Core\Utils\UtilHelper;
+ use Illuminate\Routing\Controller;
+ use Symfony\Component\HttpFoundation\Request;
+ 
+ class PropertyController extends Controller
+ {
+     protected $propRepo;
+-    public function __construct(PropertyRepository $propertyRepository)
++    protected $distRepo;
++
++    public function __construct(PropertyRepository $propertyRepository, DistrictRepository $districtRepository)
+     {
+         $this->propRepo = $propertyRepository;
++        $this->distRepo = $districtRepository;
+     }
+ 
+     public function info($id){
+         $prop = $this->propRepo->find($id);
+ 
+         $relate_props = null;
++        $area_info = [];
+ 
+         if($prop->street_id > 0){
+             $relate_props = $this->propRepo->findWhereLimit(['street_id' => $prop->street_id],10);
+@@ -34,9 +41,18 @@
+             $relate_props = $this->propRepo->findWhereLimit(['district_id' => $prop->district_id],10);
+         }
+ 
++        if($prop->district_id > 0){
++            $district = $this->distRepo->getAllDistrictsCache()->where('id', intval($prop->district_id))->first();
++            $area_info['name'] = Enum::$PROPERTY_TYPES[$prop->property_type_code].' '.$district->district_name;
++            $area_info['url'] = route('Batdongsansg24hFilter.filter_proptype_district',[UtilHelper::slug( Enum::$PROPERTY_TYPES[$prop->property_type_code]), $district->district_alias, $prop->property_type_code, $prop->district_id]);
++
++        }
++
++
+         return view("Batdongsansg24h::property.info")->with([
+             'prop' => $prop,
+             'relate_props'=> $relate_props,
++            'area_info' => $area_info
+         ]);
+     }
+ }
+\ No newline at end of file
+Index: app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 31)
++++ app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 32)
+@@ -1,24 +1,25 @@
+ @foreach($paginator as $prop)
+     <div class="media search-media">
+-        <h4 class="media-heading">
+-            <a href="{{URL::route('Batdongsansg24hProperty.info', [$prop->id, $prop->property_alias])}}" class="blue">{{$prop->property_title}}</a>
+-        </h4>
++        <a href="{{URL::route('Batdongsansg24hProperty.info', [$prop->id, $prop->property_alias])}}">
++            <h4 class="media-heading">
++                <span class="blue">{{$prop->property_title}}</span>
++            </h4>
+ 
+-        <div class="media-left">
+-            <a href="#">
+-                <img class="media-object" src="https://cdn.muaban.net/cdn/images/thumb-list/201607/26/443/7e90f97427504228a6fe0dfcb45f84a4.jpg" data-holder-rendered="true">
+-            </a>
+-            <div class="pm-date">{{$prop->DateOnMarketFormat()}}</div>
+-        </div>
++            <?php $medias = $prop->PropMedias(); ?>
++            <div class="media-left">
++                <img class="media-object" src=@if(count($medias) > 0) {{$medias[0]->property_media_url}} @else "batdongsansg24h/img/no-media.jpg"@endif data-holder-rendered="true">
++                <div class="pm-date">{{$prop->DateOnMarketFormat()}}</div>
++            </div>
+ 
+-        <div class="media-body">
+-            <p class="hidden-xs">{{$prop->getBriefDesc()}}</p>
+-            <div class="row">
+-                <div class="col-md-3 col-sm-6 col-xs-12">GiÃ¡: <span class="pm-info">{{$prop->requested_price_text}}</span></div>
+-                <div class="col-md-3 col-sm-6 col-xs-12">Diá»‡n tÃ­ch: <span class="pm-info"> {{$prop->acreage}}</span></div>
+-                <div class="col-md-6 col-sm-12 col-xs-12">Quáº­n/Huyá»‡n: <span class="pm-info"> {{$prop->getDisctrictName()}}, Há»“ ChÃ­ Minh</span></div>
++            <div class="media-body">
++                <p class="hidden-xs">{{$prop->getBriefDesc()}}</p>
++                <div class="row">
++                    <div class="col-md-3 col-sm-6 col-xs-12">GiÃ¡: <span class="pm-info">{{$prop->requested_price_text}}</span></div>
++                    <div class="col-md-3 col-sm-6 col-xs-12">Diá»‡n tÃ­ch: <span class="pm-info"> {{$prop->acreage}}</span></div>
++                    <div class="col-md-6 col-sm-12 col-xs-12">Quáº­n/Huyá»‡n: <span class="pm-info"> {{$prop->getDisctrictName()}}, Há»“ ChÃ­ Minh</span></div>
++                </div>
+             </div>
+-        </div>
++        </a>
+     </div>
+ @endforeach
+ 
+Index: app/Modules/Batdongsansg24h/Views/property/info.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 31)
++++ app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 32)
+@@ -26,11 +26,47 @@
+             <div class="pm-desc">
+                 <div class="pm-price-info">
+                     <div class="row">
+-                        <div class="col-sm-6 col-xs-12">Khu vá»±c: <a href="#">BÃ¡n cÄƒn há»™ chung cÆ° táº¡i Quáº­n TÃ¢n BÃ¬nh</a></div>
++                        @if(count($area_info) > 0)<div class="col-sm-6 col-xs-12">Khu vá»±c: <a href="{{$area_info['url']}}">{{$area_info['name']}}</a></div>@endif
+                         <div class="col-sm-3 col-xs-6">GiÃ¡: <span class="red">{{$prop->requested_price_text}}</span></div>
+                         <div class="col-sm-3 col-xs-6">Diá»‡n tÃ­ch: <span class="red">{{$prop->acreage}}</span></div>
+                     </div>
+                 </div>
++
++                <?php $medias = $prop->PropMedias(); ?>
++                @if(count($medias) > 0)
++                    <div id="prop-meida-Carousel" class="carousel slide" data-ride="carousel">
++
++                        <!-- Indicators -->
++                        {{--<ol class="carousel-indicators">--}}
++                            {{--<li data-target="#prop-meida-Carousel" data-slide-to="0"></li>--}}
++                            {{--<li data-target="#prop-meida-Carousel" data-slide-to="1"></li>--}}
++                            {{--<li data-target="#prop-meida-Carousel" data-slide-to="2"></li>--}}
++                        {{--</ol>--}}
++
++                        <!-- Wrapper for slides -->
++                        <div class="carousel-inner">
++                            <?php $media = $medias[0]; ?>
++                            <div class="item active"><img src="{{$media->property_media_url}}" alt="{{$media->property_media_name}}"></div>
++                            @foreach($medias->slice(1, count($medias)) as $media)
++                                <div class="item"><img src="{{$media->property_media_url}}" alt="{{$media->property_media_name}}"></div>
++                            @endforeach
++
++                            {{--<div class="item"><img src="https://www.w3schools.com/bootstrap/chicago.jpg" alt="Chicago" style="width:100%;"></div>--}}
++                            {{--<div class="item"><img src="https://www.w3schools.com/bootstrap/ny.jpg" alt="New york" style="width:100%;"></div>--}}
++                        </div>
++
++                        <!-- Left and right controls -->
++                        <a class="left carousel-control" href="#prop-meida-Carousel" data-slide="prev">
++                            <span class="glyphicon glyphicon-chevron-left"></span>
++                            <span class="sr-only">Previous</span>
++                        </a>
++                        <a class="right carousel-control" href="#prop-meida-Carousel" data-slide="next">
++                            <span class="glyphicon glyphicon-chevron-right"></span>
++                            <span class="sr-only">Next</span>
++                        </a>
++                    </div>
++                @endif
++
+                 <h2>ThÃ´ng tin mÃ´ táº£</h2>
+                 <div class="pm-content">
+                     {!! $prop->property_desc !!}
+Index: app/Modules/DataModel/BDS_SG24h/ModelImpl/Property.php
+===================================================================
+--- app/Modules/DataModel/BDS_SG24h/ModelImpl/Property.php	(revision 31)
++++ app/Modules/DataModel/BDS_SG24h/ModelImpl/Property.php	(revision 32)
+@@ -3,6 +3,7 @@
+ namespace App\Modules\DataModel\BDS_SG24h\ModelImpl;
+ 
+ use App\Modules\Core\BDS_SG24h\Repositories\DistrictRepositoryEloquent;
++use App\Modules\Core\BDS_SG24h\Repositories\PropertyMediaRepositoryEloquent;
+ use App\Modules\Core\Traits\BriefTextTrait;
+ use App\Modules\DataModel\BDS_SG24h\Models\Property as orgProperty;
+ use Faker\Provider\DateTime;
+@@ -64,10 +65,13 @@
+     use BriefTextTrait;
+ 
+     protected $distRepo;
++    protected $propMediaRepo;
+ 
+     public function __construct(array $attributes = [])
+     {
+         $this->distRepo = new DistrictRepositoryEloquent(\App::getInstance());
++        $this->propMediaRepo = new PropertyMediaRepositoryEloquent(\App::getInstance());
++
+         parent::__construct($attributes);
+     }
+ 
+@@ -88,6 +92,15 @@
+         }catch (ModelNotFoundException $e){
+             Log::info($e->getMessage());
+             return null;
++        }
++    }
++
++    public function PropMedias(){
++        try{
++            return $this->propMediaRepo->findByField('property_id',$this->id);;
++        }catch (ModelNotFoundException $e){
++            Log::info($e->getMessage());
++            return null;
+         }
+     }
+ 
+Index: config/app.php
+===================================================================
+--- config/app.php	(revision 31)
++++ config/app.php	(revision 32)
+@@ -52,7 +52,7 @@
+     |
+     */
+ 
+-    'timezone' => 'UTC',
++    'timezone' => 'Asia/Ho_Chi_Minh',
+ 
+     /*
+     |--------------------------------------------------------------------------
+Index: public/batdongsansg24h/css/app.css
+===================================================================
+--- public/batdongsansg24h/css/app.css	(revision 31)
++++ public/batdongsansg24h/css/app.css	(revision 32)
+@@ -103,6 +103,11 @@
+     padding-right: 20px;
+ }
+ 
++.bds-main-content .search-media a{
++    text-decoration: none;
++    color: #000000;
++}
++
+ .bds-main-content .paging{
+     text-align: center;
+ }
+@@ -110,6 +115,12 @@
+     margin: 10px 0;
+ }
+ 
++#prop-meida-Carousel img{
++    margin: 0 auto;
++    height:350px;
++    max-height: 350px;
++}
++
+ .pm-relation h2{
+     font-size: 16px;
+     font-weight: 700;
+Index: public/batdongsansg24h/img/no-media.jpg
+===================================================================
+--- public/batdongsansg24h/img/no-media.jpg	(nonexistent)
++++ public/batdongsansg24h/img/no-media.jpg	(revision 32)
+@@ -0,0 +1,20 @@
++ÿØÿà JFIF      ÿş ;CREATOR: gd-jpeg v1.0 (using IJG JPEG v62), quality = 90
++ÿÛ C 
++
++
++ÿÛ C		ÿÂ  Z x" ÿÄ             ÿÄ              ÿÚ    ÍŞlÅ‘©–+ˆ-4«%ïb4Ô…Ş‚±ª:¸ª¸°Rç}Ø÷{Ùo;×¸â ÃŒË~Oxf2F(ŸG»nòÊ$£¥¥.CõFO%v­Ë5FùIÏ¯ÕıIx«¶²€d{kÂ	·—¦©Ú%[iY›§j?¯rL|·ãé«œ$úğôilBÑ(P%D:•+wèy‰£¢ÆaêvÕ!‹k«öš¢Ëì3ÿ o7é(J{jµó£^«š.i/*xufèÔ]‚+j'Ç¿•O«v†æ#—²{+6âZEúX'éXÚíævG31Gİ_Gi¶gJi–áÜÿ ÿÄ +        !"#B$&1234CÿÚ  è5™²«‚¿i¯Z*VuµQ+Dc¥Ğì.>!ÖV˜}¦?U°o¶XÍgèñfVcĞÔËªÊlÒ_ÇƒSÂÇbi;dØ &Yi·YbQ‡#líõcëÂ Kwß³@”±ÊŞçQcWcê,•4Ì¨QğxŒ‡dä›V½i5ĞÁÍª£P²1¨ó|Æ%Ö[²¹3¸ñ£kŒ+˜xÄcºC—!;nAE·œ†[Å½qa>Ø˜ş[ëXaJg[ÄÊeU‚ò7èş@´‚0ô­sO^„¥d‚a¶çÙUKşáÊL>30Ër9¶ªã²Õ#Ôi6T¤Ş ‹Ù©T[«ugá²Š×§áAğV¸Âñ'Øck—¢°ÆÙ™¶Ú¬§dûó,bnĞ.ÍW+	ú¿ò³óÅkTì˜q`ªI½tùÕıôüq¬îÆÙ3ªÚEÔåwUqäÚCîÍ9D”d1Ø$·Û˜ªÎfïSÏÒ³{$Xlª·o­û°k†Ôéˆ+"³[©‹]wü·ÂcOµúˆˆ³å/tÚØøÜ­º»qí¡eñ6«VU+-* Ì5oqp]¹EdØU™³W¶bFÖz¬±ÀÀMUWø>Zå5Ë™QlÖV©Ë^Aıv%TëŞ#LùÓ†LTDrÕ—@·²4¶ø™ğPlëØoëÆ0yoke?‚ÛM+…cÄèÂ{û5Ê53«“úëŸˆŸ€Ÿ¥ÿ ëÿ -ÖS¬à:"DN¼ÏÀ±•6flÏÍŸÿÄ $         !1"2#AÿÚ ?¥kBHh¨w6¹İÿ É©op„¬fÃš£è#rÏÊ şNÃÃ]ª|Jm´XŒºÖ­r±«²ÆcfˆA0S·¨ÿ f&¿µLä¤ĞzÌ+±c¸­±)næq7ÄG-–1 ‰Ôª¹øÌ8ç:‚£´æ_ÍäÑ^ÛäÇN}©İ[|J¹º1„ÀÌ¾A‹Ì´}¼ÏÉßÁ‡Ë3“Â§5uÈ—ôT½t­ÊËzP…pb‰¬UÉ•Vb2êq™»/©H.Ó´ÿÄ $          !1AB"QÿÚ ?m‘~º‰¶U›cÄn^™¾ÜMR¾ ŒÓ¸“d2ÅB§UZ»`ÅÑKÆO˜ÜC_ÈöúJÛVÌwmxŠr<T6.eäÔ@šìtw€/ Î‘nÏş9<,J*cŒEjë¬²º¬9Øª·‘¥¯ã‰Ù(Ğp¾¢Ê¼W¨5|ºæ'©tär&xÜGcˆ­´(¦X5:Âq?ÿÄ >       !1"AQaq#2‘BR±Áğ $Cbr¡²á%34s‚ÂÒâÿÚ  ?.È[Fƒ^İÓj™m‡M?û;ÜöóDØú¸ëùòLˆ{û¸øşxÌÂÿ ÊgQùüî›'DÖŠ@ññC7¼v	²M¸Ù?ºÛàµ\¢‚»õrıaÚöİ{=AœÁÍIPË’Û®Öw4Á®\®EüV4]ƒƒø™]{ØµD]õNÄÏí&Ù¹6füNÁf_¶en+,Mİ@'wÓ;#/rT„sN‡B¤¡ÌÚ»¨İ)°éË÷Ü†ÜW31qá»`wOÀa°ù"x·q]Í~åonë5¸üwRÊêl®®ŸæïXvY›Mí7×$xipn|­¯Uú»Ûˆ"ƒÇÂÖ±¹‡÷V+d.†—QÜét½ZXÌC¾ïuÆ*™”Öàtùh¥æÓ39‰ñRb„w<‡¾§í}ë¦öÑWüÍ,TüÜFu|¾*B19¶È@·]±Øş¡§Mhih»3vÇ²/&>;3HÑ½‚kÒíŸè^‚×öoş€‰RĞºhè5îÎæëî+é™œÇ’POÚË¿óX³‹qm»J¾Ş
++~áCÊìıF¨ñ¸~D*s¢omj•æd€4û£û¢\ã@+{‡~
++få´ÍßTøq\Iô£örê½ÄˆeŒ9­#ëiJ³/ªäÌó¹òNö/É'ZÖ²ôRb'šY^FaÙO¬;L‚ÚÆò%tÌºvŸ%‰Â°Ón‰54!¼L[\9zfİBÖ±¥†8ËÚGSºoˆNRû´ëşJnÁ½¼PLB^Í¾E$f«TÈæ–HßšİC_¹9Ğ5Ø¸N—!Ëåªd²#mÏ.Ä7^Å4Ûr¶æ±AW”‚Fú'ç°İO2áøZékóM­…ÃUóaÙ“ñ@ÇsÌxŒk1½?ùØÊ÷œ)5ç}S¢ËÀáV·œ¹$02BŞ§}“pí‰yUÀiÌ7*gdÈeuÙ·V‰ó	YŠ’²›f]GC	in …\~EO6Væ’ºš:&EéL.iµ¼­ñî³Aèø™ úÎæ#Ê×¤®ˆ(„øÙ¨úÍBW˜tìŠ
++[üè°Ùròî¬´fV|äWeå¢âÇEá£%†°İO´-ë¢cèó8°×B¸ma’N¹z/«ù”q‘#¦#WU®$<fš¯~×³˜â	ç†dovj‡±s‹E/¬7÷†Sw¢ÃT‚¥g¹ğµ#æx^fåè;.]û"AÊPiÚ¨ø¢5 9XYccXŞÀ~–f1ıl)£â1‘Cã{¨ø˜ü/<¬ÊæåÔèzøÚ1¶l<‚ÚÛŒŞıiErñ8–İ©¿[ÿ #æµ*‘üQ#” y~… ¶YŒt\>Æ©Œ1åp7÷uPÇÍ$½Ô>½m• ÑúÄŸK= E»~è¹y«®ô®óùmóúä£òúbgš‹_ØÙeh¼º4Qš[§y¦’ĞMöMmòÖÉ€í—eÿÄ %        !1AQaq‘¡ğ±ÑáÁñÿÚ  ?!+´^ú$À41ôéši¹Uè5Óê@}¸çÎ½^ùw *Ò)u|hïƒpG^¯Ú®®sÇe‰¬ğ‰kØ>û]ÈM‡«Õ¾Ûç15aõ¿½fB/€Ñ÷ÓĞoü#E‹šN©…/Ñó-´ÃCm&?Œ·F/–/T“µÇ5Ø€Õ¼Y÷àz©R÷şÃ .L}ÛîñÛ¯+ëû¹tviÇåûø›­}:A6şe„R¬šûÙ]ªÆµ55Ö¼ú†šäÇ¥z#MéB×–ú{s-_eîy”-kÛ`îoâd*Áo—x:†·‡õŒÀ¤@¼
++¬wÒï)!ÑÁl¢eşN½¢+°+ŠI–3¨SID5X‘]»ŒğN£q‹âºá,W4³
++ï*Z¼‡°„ÿ qvop_$¦;O,ñ5µr3OQ~#¬±	ÛÔÔ;`ˆPã£›Z¦®ú·éìÏÉÅ3UŞfTkhæ
++ ÄşK<iP˜–ªl†0LĞ#}n%¸¨4iq-‘x¾IjPœü?Ô¡â±_"ÿ ì$aqXæúÜ/«.È‡?Ix‰3UÖ6¦… ½â,Æ‡Ì"Lº¥+ é>Y$E' ¾õ”<ÆûÈğcæZÙ$6‡g]q;fE8
++«Ä=…†ŒQk7—¥@Dç'ïüÊ¡µdŞÓš6‘ÓÚ^„À–ø?¨ÌBÑZ==à(•kø‡Ğ¿ˆ¬Êü¨«J[7+ó“3H·°}Ô¥Yu5Úu¥ÍŠÌ†¾;y`ó^¾ØCtl:ñÓW`¿öã} ˜¶ùç1×Ê¥gPÉT€ê´ãø‹ƒq5[Vã-s1ı°¶åxvõ¶ÚhšÚwé-*á-gºÀ¯)	B@:4’Š´õÊk=²)ÄKöÂí(fäN<éù+:{T°Óéû¥Q„Ó­0¼_0F…ÑvÛ6½D*|XÎ©µé( a‹ %¬®ØñÜÌåjÕíø…¾¹è6øÆ®§Nˆ•€Â5.œktÁ_÷ŞUIµ¡‡q bá}Ê>’»ÎN‡±Ó5.!h]M¤[Cg“£Ö{²áâ¾aÃQ¡Ê¶ÔAqyÑšêvŒßlæ$†1ßôÙ)àuıñ“aIP|5*a6½‚ÿ #/2sW,æ£2ŞS}#©³XLä¢±¸Á]Úh|À!(ÇXQƒùåĞKácÉ€â‚ì-x>x4S-°º¥MŠR´z“nêV eÔiÓï3ˆß¿M“ /¯íÃëP¨9—GßV&^í.w²áïƒ_ÖŞc8”¾UJ÷éÿ 90•XŸÂ!Æ·ÅSâl0®nü=ı ÀëÖl_«0Ø¯À`µv8zœ	Çkíı#VØÛâla«#mumó9†’¡FzaJUFLÊDF;TÎ˜ë¢é„·±Š4§›h÷f›jçÿÚ      ÅYd±‚4I2ÀgnÛ Á\ÔyÕ'ÉşÑÍ0=Ê­H0AÿÄ #          !1QAaq‘¡Á±ÑğÿÚ ?mñãOƒĞhû{²Ö~ÿ ªP!åş¾&*ï‚e,l`–ncÓs<F½NüÅ©˜»İúÄÔÌÊQÕŒb«ç÷iÖ$ó%§1]í×ÏÔL™¼çmy–æµ»a¬=‡îXJäµ–IÜËé&†Vœoßx…)¢’‹4Ml–…––Òµ0òA ×…êë%]KÄ*¥m¡§]¦ÄxP‘,©Ş QDÑEbñ]|kÁO²˜EhŞåü~eX[Ú|#ù–¶ÄLC,®·¦†4U¦/©mYÿÄ #         !1Aaq‘QÁ¡±ğáÿÚ ?uW˜hï1¼›ÛõÚp@jUé¿ìÅïË¬ñ;Çˆ¿(ÅƒŞÎğ¸PzLÑ˜Ê²ÚœÁıâ(Áµâ ˆ|˜ùÏ÷‰ÅÇWÑ_‹ÌÙzÖR¿â£*´l
++ÍñÍå~ (ÊV¡ÇŞ‡û „¢³fw÷ŒÂP1·H^ø•Z‡5›àÛ³Ó@}?rú'Ã÷Ä·(¥‰—½T<ÓeDQ"VbÒÿÄ #        !1AQaq‘¡ÁÑğñÿÚ  ?5¸ƒXÚ”nyæµ—n®C - ëFw°åÁB@Zs¥ O‚¢ş	{L˜<ˆ ;,ÌĞ.¨¥ZÁjšİ¹àmÑ­3JRÃ=)×”Bçjü¿'ÇÑ˜W’ŠùuÆ<iø3~¹¸ÀQU >Tœ2
++ØÒÃ²7ƒq‚çv^äH Ú°9ç%]«³A¶ÏÍÍ\²®"$K£Wøb@0ÑˆXö§ßÖSX”ºDò‡4EAÁL’qæÅ|ÛmŒNRh!ÃhB -›w=X«¸i…®ñ)HØ¼ò|ÚÈ	€"ı¹0,‘€D«$ÍN‚ hÕçá½c†°è656»¦¢l+ˆº$T u¶4•“4& R]æÈDú›L×F¥TÁÒ3Şå$h5w¤ïaHÙi»ÑÁYWB"€	*=QMÍrOñô@5‘š§u0€•Ç#P lT]İdê(¥ü¬`­dQ ¡,{ñ…Ê]ƒ*d•ÄÀpÉùM®Şîe@BT/vÈŸà(èv"”Ã²J’¾r‘-a¿JJòlÈu”¼,ÛwçÂc… <³E¢v„«u˜ÏJøpb¡Í¤ÙN;?z¥4¨³…C+’ÑZ ºPnæBáÉZUšë¼/F¨iš»~œ%zı8®©Ù>YbƒŞï#b Ş†° ƒsÎ¾ôsJÖX½QHìµ:GÈŸ![ĞÃI®õ²úwŞ:@Õ¬"»7ÔÂB	¾w"<Ó;@ Œ©KF€+
++2´·ÃwŠÚÂ%íÕóŠ
++\—(„?RŠ >M>®Êëíÿ XÉhµ¶AØ¾™µ‹Ht±Ğz§’—½	Mxk"!Œ=ª½UÈ˜¡%¡F‰%ÛŒBB@TŞÅ¿Ëpi`RÑõóõšÜˆJBv#ìq™<F¨ñSçç&É„O”ï$ši­˜á&Y®IgÁ¿ÖËvîMı÷xZøcUAğ”°¤íjâ®CyØ½êëúî·y(hËx»ı0¶EP-°"˜Iì‡òa"‘,øÍ'NEY ?i†¬|BŠ·œÃ-Õ¨øp_'³W¹µ'ìëÈáª)ŸZjZ„0Y.Y¹“¨RF€î ¼
++AøzË¤Y "&—‘Ö@UJæ÷¯YÄÿ ç›}*íÃ€ÕÉ[Bt(Ë„
++=îF`LÍ3V7¯‰-ŠVãC-š]ûe=2n“#ÀGÜ/Œ!ßÉh‡•Oİ‹æ $
++F­Ş^õÉâ6>Ë˜Š›pŸ Şüe•÷º¡i|ß>pä¥ß„§Î!9ãfm1èˆ êc÷ˆóoüb÷‚hc•5LâDc)D_—.ˆ¦¸£³óÏŞ'ÙˆÊÄù‡d´]á¼“Q°5(ŠîUğ'B€h‹Gß-0@‡[~`!|7V#œB¾høË-‡ À/£ €IÒïLW®ëøâOÓƒe€SÆĞ~DÍ…“™çÌÍ*ÉB(½òFñ±1 qh‹*-İÖÃ-Õ’ÑtHM\@`DM}Ÿ"™3@«ìşğE"q¢8òCøÂ¦IZÍú¢¥)(±g—9Q—àÄ|ûcÄ|f÷ƒ5o\r»cÉáÀ^ê_8ÿ a»9 ¤ìD"6ØQZ„ è&__şä”¤G˜>pcFQè\¯>XÌƒøx~›”CP;oÈşp'ã\ühÃâÿ ­dw<%eúú|`N™>ª~o ı`ÁÑÓıb”24ƒgÃßûšÉtøğŸ%È:œƒz+xğqV— ü»2,
++7¹È•˜®¼œ£»QÒ­Ğ2ÀFëy,>Sëxá*€/± ô×X Âû5I|ÁMk;¬\M‘õ¦½gòhúÅÙ«üe•XİÅ²ÌuÁ–ø™áÀDÒLù¯ãŸ«Š÷5R¡­ù÷€$; õV¤({p@ğ¯1< ¥%ÁücºeBÓ†±”,{tÏg¼ÿÙ
+\ No newline at end of file
+
+Property changes on: public/batdongsansg24h/img/no-media.jpg
+___________________________________________________________________
+Added: svn:mime-type
+## -0,0 +1 ##
++application/octet-stream
+\ No newline at end of property

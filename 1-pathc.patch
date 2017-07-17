@@ -1,0 +1,150 @@
+Index: app/Modules/Batdongsansg24h/Controllers/UserController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 30)
++++ app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 31)
+@@ -318,6 +318,7 @@
+             $form_data = $request->all();
+             $this->propValidator->with($form_data)->passesOrFail(ValidatorInterface::RULE_CREATE);
+ 
++            $user = $this->userRepo->findByField('id',$request->input('id'))->first();
+ 
+             $form_data['date_on_market'] = Carbon::now('ICT');
+             $form_data['property_alias'] = UtilHelper::slug($request->input('property_title'));
+@@ -327,9 +328,9 @@
+             $propImgs = $form_data['property_images'];
+ 
+             $countUploaded = 0;
+-            
++//            dd($propImgs);
+             foreach ($propImgs as $propImg){
+-                if(substr($propImg->getClientMimeType(), 0, 5) == 'image' && $propImg->getClientSize() <= Constant::MAX_SIZE_IMG_UPLOADED){
++                if(!empty($propImg) && substr($propImg->getClientMimeType(), 0, 5) == 'image' && $propImg->getClientSize() <= Constant::MAX_SIZE_IMG_UPLOADED){
+                     $countUploaded++;
+                     $prop_media_data = [];
+                     $extension = $propImg->getClientOriginalExtension();
+@@ -364,6 +365,7 @@
+ //                redirect()->back()->withErrors('Có lỗi trong quá trình xử lý. Xin vui lòng thử lại.')->with('target', $target);
+ //            }
+ 
++            $this->emailHandler->sendNewPostMsg($user, $prop);
+             return redirect()->route('Batdongsansg24hUserProfile.postedMsg',[$form_data["id"]]);
+         } catch (ValidatorException $e) {
+             if ($request->wantsJson()) {
+Index: app/Modules/Batdongsansg24h/Views/user/email_notify_new_msg_post.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/email_notify_new_msg_post.blade.php	(nonexistent)
++++ app/Modules/Batdongsansg24h/Views/user/email_notify_new_msg_post.blade.php	(revision 31)
+@@ -0,0 +1,15 @@
++<div>
++    <span class="header"><p><strong>batdongsansg24h.com</strong> Notification</p></span>
++    <strong>"{{$prop->property_title}}"</strong> has been updated by {{$user->email}}.
++
++    <hr style="width:100%;height:1px;background:#ccc;border:0">
++
++    <div>
++    {!!  $prop->property_desc !!}
++    </div>
++
++    <hr style="width:100%;height:1px;background:#ccc;border:0">
++
++    <a href="{{ $link = URL::route('Batdongsansg24hProperty.info',[$prop->id, $prop->property_alias]) }}"> {{ $link }} </a>
++</div>
++
+Index: app/Modules/Core/Command/Test/TestCommand.php
+===================================================================
+--- app/Modules/Core/Command/Test/TestCommand.php	(revision 30)
++++ app/Modules/Core/Command/Test/TestCommand.php	(revision 31)
+@@ -11,6 +11,7 @@
+ use App\Modules\Core\BDS_SG24h\Repositories\UserRepository;
+ use App\Modules\Core\Inf\IEmailHandler;
+ use App\Modules\Core\Traits\BriefTextTrait;
++use App\Modules\DataModel\BDS_SG24h\ModelImpl\Property;
+ use App\Modules\DataModel\BDS_SG24h\ModelImpl\User;
+ use Goutte\Client as GoutteClient;
+ use GuzzleHttp\Client as GuzzleClient;
+@@ -126,6 +127,37 @@
+         print $this->emailHandler->sendActiveLink($user)?'Send ok': 'Send fail';
+     }
+ 
++    public function testSendNewPostMsg(){
++        $user = new User([
++            'email' => 'huy.tt@galagala.vn',
++            'name' => 'Test user',
++            'password' => '123123',
++            'active_token' => Str::random(60)
++        ]);
++
++        $prop = new Property([
++              "owner_user_phone" => "12286773141",
++              "property_type_code" => "1",
++              "property_title" => "teafadfateaf fafafa",
++              "property_desc" => "asfs sf fasf df<div>asdfasfsdfasf</div><div>asdf</div><div>asdfasfasdfasfaf</div><div>sdfasfasdfasdf</div><div>asfdsdffdfasfasdfaf</div>",
++              "district_id" => "1",
++              "ward_id" => "4",
++              "street_id" => "6",
++              "requested_price_text" => "2 tỷ",
++              "requested_price_value" => "2000000000",
++              "requested_price" => "2",
++              "currency" => "1000000000",
++              "property_width" => "10",
++              "property_height" => "10",
++              "acreage" => "100m²",
++              "property_address" => "123 sfsf sfsfsfasdfa fasfasfaf",
++        ]);
++
++//        $user->updateActiveToken(Str::random(60));
++
++        print $this->emailHandler->sendNewPostMsg($user, $prop)?'Send ok': 'Send fail';
++    }
++
+     /**
+      * Execute the console command.
+      *
+@@ -145,6 +177,8 @@
+ 
+ //        $this->testSendResetPwLink();
+ 
+-        $this->testSendActiveLink();
++//        $this->testSendActiveLink();
++
++        $this->testSendNewPostMsg();
+     }
+ }
+\ No newline at end of file
+Index: app/Modules/Core/Impl/EmailHandler.php
+===================================================================
+--- app/Modules/Core/Impl/EmailHandler.php	(revision 30)
++++ app/Modules/Core/Impl/EmailHandler.php	(revision 31)
+@@ -73,4 +73,19 @@
+             return false;
+         }
+     }
++
++    public function sendNewPostMsg($user, $prop)
++    {
++        try {
++            Mail::send('Batdongsansg24h::user.email_notify_new_msg_post', compact('user', 'prop'), function ($m) use ($prop) {
++                $m->subject($prop->property_title);
++                $m->to('thanhhuykg@gmail.com');
++                $m->from(env('MAIL_USERNAME', 'noreply@batdongsansg24h.com'));
++            });
++
++            return true;
++        } catch (\Exception $e){
++            return false;
++        }
++    }
+ }
+\ No newline at end of file
+Index: app/Modules/Core/Inf/IEmailHandler.php
+===================================================================
+--- app/Modules/Core/Inf/IEmailHandler.php	(revision 30)
++++ app/Modules/Core/Inf/IEmailHandler.php	(revision 31)
+@@ -15,4 +15,6 @@
+     public function sendResetPwLink($broker, array $credentials);
+ 
+     public function sendActiveLink($user);
++
++    public function sendNewPostMsg($user, $prop);
+ }
+\ No newline at end of file

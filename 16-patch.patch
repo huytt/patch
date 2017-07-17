@@ -1,0 +1,13 @@
+Index: app/Modules/Batdongsansg24h/Controllers/FilterController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 57)
++++ app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 58)
+@@ -94,7 +94,7 @@
+             $sphinx = new SphinxSearch();
+ //        $results = $sphinx->search('pham huu lau','bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_EXTENDED)->limit(20)->filter('district_id',7)->get();
+ //            $results = $sphinx->search($kw, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ANY)->limit(Constant::BDS_PER_PAGE_DEFAULT, $page - 1)->get();
+-            $sphinx = $sphinx->search($kw, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ANY);
++            $sphinx = $sphinx->search($kw, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ALL)->setSortMode(SphinxClient::SPH_SORT_EXTENDED,'timestamp_on_market DESC');
+             foreach ($condition as $field => $value) {
+                 if (is_array($value)) {
+                     list($min, $max) = $value;

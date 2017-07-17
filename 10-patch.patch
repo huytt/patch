@@ -1,0 +1,227 @@
+Index: app/Modules/Batdongsansg24h/Composers/partialProperties.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Composers/partialProperties.php	(revision 49)
++++ app/Modules/Batdongsansg24h/Composers/partialProperties.php	(revision 50)
+@@ -22,9 +22,15 @@
+ 
+     public function compose($view){
+         $perpage = isset($view['perpage'])?$view['perpage']:Constant::BDS_PER_PAGE_DEFAULT;
+-        $condition = isset($view['condition']) && !empty($view['condition'])?$view['condition']:[['district_id','>',0]];
++        $scope = isset($view['scope'])?$view['scope']:null;
+ 
+-        $paginator = $this->propRepo->paginateWhere($condition,$perpage,['*'],'date_on_market','desc');
++        if(!is_null($scope)){
++            $paginator = $this->propRepo->paginateWhereScope($scope, $perpage,['*'],'date_on_market','desc');
++        } else {
++            $condition = isset($view['condition']) && !empty($view['condition'])?$view['condition']:[['district_id','>',0]];
++            $paginator = $this->propRepo->paginateWhere($condition,$perpage,['*'],'date_on_market','desc');
++
++        }
+ 
+         return $view->with([
+             'paginator' => $paginator
+Index: app/Modules/Batdongsansg24h/Controllers/UserController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 49)
++++ app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 50)
+@@ -79,6 +79,7 @@
+         $user = $this->userRepo->findByField('id', $userId)->first();
+ 
+         return view('Batdongsansg24h::user.profile.posted_message')->with([
++            'id' => $user->id,
+             'phone' => $user->phone
+         ]);
+     }
+@@ -339,6 +340,7 @@
+                     $propImg->move(public_path('media/bds_sg24h'), $photoName);
+ 
+                     $prop_media_data['property_id'] = $prop->id;
++                    $prop_media_data['msg_sku'] = 'own-'.$prop->id;
+                     $prop_media_data['property_media_name'] = $photoName;
+                     $prop_media_data['property_media_url'] = '/media/bds_sg24h/'.$photoName;
+ 
+@@ -367,7 +369,7 @@
+ //            }
+ 
+             $this->emailHandler->sendNewPostMsg($user, $prop);
+-            return redirect()->route('Batdongsansg24hUserProfile.postedMsg',[$form_data["id"]]);
++            return redirect()->route('Batdongsansg24hUserProfile.postedMsg',[$form_data["owner_user_id"]]);
+         } catch (ValidatorException $e) {
+             if ($request->wantsJson()) {
+                 return response()->json([
+Index: app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php	(revision 49)
++++ app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php	(revision 50)
+@@ -46,7 +46,7 @@
+ 
+ 
+                             <input type="hidden" name="owner_user_phone" value="{{Auth::guard('bds_sg24h.users')->user()->phone}}">
+-                            <input type="hidden" name="id" value="{{Auth::guard('bds_sg24h.users')->user()->id}}">
++                            <input type="hidden" name="owner_user_id" value="{{Auth::guard('bds_sg24h.users')->user()->id}}">
+ 
+                             <div class="form-group">
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Loại bất động sản: </label>
+Index: app/Modules/Batdongsansg24h/Views/user/profile/posted_message.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/profile/posted_message.blade.php	(revision 49)
++++ app/Modules/Batdongsansg24h/Views/user/profile/posted_message.blade.php	(revision 50)
+@@ -15,9 +15,11 @@
+ @section('left-content-section')
+     {!! view('Batdongsansg24h::partials.partialProperties',[
+         'perpage' => 10,
+-        'condition' => [
+-            ['district_id','>',0],
+-            'owner_user_phone' => $phone
+-        ],
++        'scope' => function($query) use ($id, $phone){
++            return $query->where('district_id','>',0)
++            ->where(function($subQuery) use ($id, $phone){
++                return $subQuery->where('owner_user_id','=', $id)->orwhere('owner_user_phone','=',$phone);
++            });
++        }
+     ])->render() !!}
+ @endsection
+Index: app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustom.php
+===================================================================
+--- app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustom.php	(revision 49)
++++ app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustom.php	(revision 50)
+@@ -15,10 +15,12 @@
+ 
+     public function countWhere(array $where);
+ 
+-    public function makePaginate(Builder $builderTakeObj = null, $primaryKey, $total, $perPage = null, $path = null,$page = null, $pageName = 'page');
++    public function makePaginate(Builder $builderTakeObj = null, $primaryKey, $perPage = null, $path = null,$page = null, $pageName = 'page');
+ 
+     public function paginateWhere(array $where, $perPage = null, $columns = ['*'], $sortbyField = null, $direction = 'asc', $path = null,$page = null, $pageName = 'page');
+ 
++    public function paginateWhereScope(\Closure $scope, $perPage = null, $columns = ['*'], $sortbyField = null, $direction = 'asc', $path = null,$page = null, $pageName = 'page');
++
+     public function findWhereLimit(array $where, $take, $skip = 0, $columns = ['*']);
+ 
+     public function getLimit($take, $skip = 0);
+Index: app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustomEloquent.php
+===================================================================
+--- app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustomEloquent.php	(revision 49)
++++ app/Modules/Core/BaseRepositoryCustom/BaseRepositoryCustomEloquent.php	(revision 50)
+@@ -93,9 +93,12 @@
+ 
+     }
+ 
+-    public function makePaginate(Builder $builderTakeObj = null, $primaryKey, $total, $perPage = null, $path = null,$page = null, $pageName = 'page'){
++    public function makePaginate(Builder $builderTakeObj = null, $primaryKey, $perPage = null, $path = null,$page = null, $pageName = 'page'){
+         $this->applyCriteria();
+         $this->applyScope();
++
++        $total = $this->model->count();
++
+         $perPage = is_null($perPage) ? config('repository.pagination.limit', 15) : $perPage;
+ 
+         $path == null ? Paginator::resolveCurrentPath():$path;
+@@ -109,7 +112,7 @@
+ 
+         $this->handleSkipTake($builderTakeObj, $primaryKey, $skip, $perPage);
+ 
+-//        var_dump($this->getSql($this->model->toSql(),$this->model->getBindings()));
++//        dd($this->getSql($this->model->toSql(),$this->model->getBindings()));
+ 
+         $model = $this->model->get();
+ 
+@@ -132,14 +135,36 @@
+ 
+         $this->applyConditions($where);
+ 
+-        $total = $this->model->count();
++//        $total = $this->model->count();
++
++        if(!is_null($sortbyField)){
++            $this->orderBy($sortbyField, $direction);
++        }
++
++//        dd($this->getSql($this->model->toSql(),$this->model->getBindings()));
++        return $this->makePaginate($builderTakeObj, 't.'.$primaryKey, $perPage, $path, $page, $pageName);
++    }
++
++    public function paginateWhereScope(\Closure $scope, $perPage = null, $columns = ['*'], $sortbyField = null, $direction = 'asc', $path = null, $page = null, $pageName = 'page')
++    {
++        $this->scopeQuery($scope);
++
++        $primaryKey = $this->model->getKeyName();
++
++        $this->model->setTable($this->model->getTable().' as t');
++
++        $this->model = $this->model->select($columns);
++
++        $builderTakeObj = clone $this->model;
++
++//        $total = $this->model->count();
+ 
+         if(!is_null($sortbyField)){
+             $this->orderBy($sortbyField, $direction);
+         }
+ 
+ //        dd($this->getSql($this->model->toSql(),$this->model->getBindings()));
+-        return $this->makePaginate($builderTakeObj, 't.'.$primaryKey, $total, $perPage, $path, $page, $pageName);
++        return $this->makePaginate($builderTakeObj, 't.'.$primaryKey, $perPage, $path, $page, $pageName);
+     }
+ 
+     public function getSql($sql, $bindings)
+Index: app/Modules/DataModel/BDS_SG24h/ModelImpl/Property.php
+===================================================================
+--- app/Modules/DataModel/BDS_SG24h/ModelImpl/Property.php	(revision 49)
++++ app/Modules/DataModel/BDS_SG24h/ModelImpl/Property.php	(revision 50)
+@@ -97,7 +97,10 @@
+ 
+     public function PropMedias(){
+         try{
+-            return $this->propMediaRepo->findByField('property_id',$this->id);;
++//            return $this->propMediaRepo->findByField('property_id',$this->id);
++            return $this->propMediaRepo->scopeQuery(function($query){
++                return $query->where('property_id',$this->id)->orWhere('msg_sku',$this->msg_sku);
++            })->all();
+         }catch (ModelNotFoundException $e){
+             Log::info($e->getMessage());
+             return null;
+Index: app/Modules/DataModel/BDS_SG24h/Models/Property.php
+===================================================================
+--- app/Modules/DataModel/BDS_SG24h/Models/Property.php	(revision 49)
++++ app/Modules/DataModel/BDS_SG24h/Models/Property.php	(revision 50)
+@@ -61,8 +61,8 @@
+ 
+     protected $table = 'properties';
+ 
+-    protected $connection = 'BDS_SG24h';
+-
++    protected $connection = 'BDS_SG24h';
++
+ 	public $timestamps = false;
+ 
+     protected $fillable = [
+@@ -70,6 +70,7 @@
+         'date_on_market',
+         'date_sold',
+         'date_expire',
++        'owner_user_id',
+         'owner_user_phone',
+         'property_title',
+         'property_desc',
+Index: app/Modules/DataModel/BDS_SG24h/Models/PropertyMedia.php
+===================================================================
+--- app/Modules/DataModel/BDS_SG24h/Models/PropertyMedia.php	(revision 49)
++++ app/Modules/DataModel/BDS_SG24h/Models/PropertyMedia.php	(revision 50)
+@@ -27,12 +27,13 @@
+ 
+     protected $table = 'property_medias';
+ 
+-    protected $connection = 'BDS_SG24h';
+-
++    protected $connection = 'BDS_SG24h';
++
+ 	public $timestamps = false;
+ 
+     protected $fillable = [
+         'property_id',
++        'msg_sku',
+         'property_media_name',
+         'property_media_url',
+         'is_present'

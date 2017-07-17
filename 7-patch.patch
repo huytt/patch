@@ -1,0 +1,257 @@
+Index: app/Modules/Batdongsansg24h/Controllers/FilterController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 40)
++++ app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 41)
+@@ -65,6 +65,7 @@
+         $condition = [];
+         $from_price = $request->input('from_price');
+         $to_price = $request->input('to_price');
++        $title = $request->input('t');
+ 
+         empty($from_price)?:array_push($condition,['requested_price_value','>=',$from_price]);
+         empty($to_price)?:array_push($condition,['requested_price_value','<=',$to_price]);
+@@ -76,7 +77,7 @@
+         $curFromPrice = $from_price;
+         $curToPrice = $to_price;
+ //        dd($condition);
+-        return view('Batdongsansg24h::home.search-filter', compact('condition', 'curDist', 'curWard', 'curPt', 'curStreet', 'curFromPrice', 'curToPrice'));
++        return view('Batdongsansg24h::home.search-filter', compact('condition', 'curDist', 'curWard', 'curPt', 'curStreet', 'curFromPrice', 'curToPrice','title'));
+     }
+ 
+     public function search(Request $request){
+@@ -99,33 +100,42 @@
+             if(!empty($property_type_alias) && !is_null($wname) && !is_null($dname)) {
+                 return Redirect::route('Batdongsansg24hFilter.filter_proptype_district_ward',[
+                     $property_type_alias,$dname, $wname, $property_type_code, $district_id, $ward_id,
+-                    'from_price' => $from_price, 'to_price' => $to_price
++                    'from_price' => $from_price, 'to_price' => $to_price,
++                    't' => sprintf('%1$s | %2$s | %3$s', Enum::$PROPERTY_TYPES[$property_type_code], $ward->ward_name, $dis->district_name)
+                 ]);
+             }
+ 
+             if(!empty($property_type_alias) && !is_null($dname)){
+                 return Redirect::route('Batdongsansg24hFilter.filter_proptype_district',[
+                     $property_type_alias, $dname, $property_type_code, $district_id,
+-                    'from_price' => $from_price, 'to_price' => $to_price]);
++                    'from_price' => $from_price, 'to_price' => $to_price,
++                    't' => sprintf('%1$s | %2$s', Enum::$PROPERTY_TYPES[$property_type_code], $dis->district_name)
++                ]);
+             }
+ 
+             if(!is_null($wname) && !is_null($dname)) {
+                 return Redirect::route('Batdongsansg24hFilter.filter_district_ward',[
+-                    $dname, $wname, $district_id, $ward_id, 'from_price' => $from_price, 'to_price' => $to_price
++                    $dname, $wname, $district_id, $ward_id, 'from_price' => $from_price, 'to_price' => $to_price,
++                    't' => sprintf('%1$s | %2$s', $ward->ward_name, $dis->district_name)
+                 ]);
+             }
+ 
+             if(!is_null($dname)){
+                 return Redirect::route('Batdongsansg24hFilter.filter_district',[$dname, $district_id,
+-                    'from_price' => $from_price, 'to_price' => $to_price]);
++                    'from_price' => $from_price, 'to_price' => $to_price,
++                    't' => sprintf($dis->district_name)
++                ]);
+             }
+ 
+             if(!is_null($property_type_alias)){
+                 return Redirect::route('Batdongsansg24hFilter.filter_proptype',[$property_type_alias, $property_type_code,
+-                    'from_price' => $from_price, 'to_price' => $to_price]);
++                    'from_price' => $from_price, 'to_price' => $to_price,
++                    't' => sprintf(Enum::$PROPERTY_TYPES[$property_type_code])
++                ]);
+             }
+ //        }
+ 
+-        return view('Batdongsansg24h::home.search-filter');
++        $title = '';
++        return view('Batdongsansg24h::home.search-filter', compact('title'));
+     }
+ }
+\ No newline at end of file
+Index: app/Modules/Batdongsansg24h/Views/home/search-filter.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/home/search-filter.blade.php	(revision 40)
++++ app/Modules/Batdongsansg24h/Views/home/search-filter.blade.php	(revision 41)
+@@ -4,6 +4,8 @@
+ 
+ @section('role-section','homeSearchFilter')
+ 
++@section('title-section', empty($title)?:$title.' |')
++
+ @section('main-content-section')
+     {!! view('Batdongsansg24h::partials.partialProperties',[
+         'condition' => isset($condition)?$condition:[],
+Index: app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 40)
++++ app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 41)
+@@ -1,26 +1,26 @@
+ @foreach($paginator as $prop)
++    <a href="{{URL::route('Batdongsansg24hProperty.info', [$prop->id, $prop->property_alias])}}" class="media-url">
+     <div class="media search-media">
+-        <a href="{{URL::route('Batdongsansg24hProperty.info', [$prop->id, $prop->property_alias])}}">
+-            <h4 class="media-heading">
+-                <span class="blue">{{$prop->property_title}}</span>
+-            </h4>
++        <h4 class="media-heading">
++            <span class="blue">{{$prop->property_title}}</span>
++        </h4>
+ 
+-            <?php $medias = $prop->PropMedias(); ?>
+-            <div class="media-left">
+-                <img class="media-object" src="@if(count($medias) > 0) {{URL::asset($medias[0]->property_media_url)}} @else {{URL::asset('batdongsansg24h/img/no-media.jpg')}} @endif" data-holder-rendered="true">
+-                <div class="pm-date">{{$prop->DateOnMarketFormat()}}</div>
+-            </div>
++        <?php $medias = $prop->PropMedias(); ?>
++        <div class="media-left">
++            <img class="media-object" src="@if(count($medias) > 0) {{URL::asset($medias[0]->property_media_url)}} @else {{URL::asset('batdongsansg24h/img/no-media.jpg')}} @endif" data-holder-rendered="true">
++            <div class="pm-date">{{$prop->DateOnMarketFormat()}}</div>
++        </div>
+ 
+-            <div class="media-body">
+-                <p class="hidden-xs">{{$prop->getBriefDesc()}}</p>
+-                <div class="row">
+-                    <div class="col-md-3 col-sm-6 col-xs-12">Giá: <span class="pm-info">{{$prop->requested_price_text}}</span></div>
+-                    <div class="col-md-3 col-sm-6 col-xs-12">Diện tích: <span class="pm-info"> {{$prop->acreage}}</span></div>
+-                    <div class="col-md-6 col-sm-12 col-xs-12">Quận/Huyện: <span class="pm-info"> {{$prop->getDisctrictName()}}, Hồ Chí Minh</span></div>
+-                </div>
++        <div class="media-body">
++            <p class="hidden-xs">{{$prop->getBriefDesc()}}</p>
++            <div class="row">
++                <div class="col-md-3 col-sm-6 col-xs-12">Giá: <span class="pm-info">{{$prop->requested_price_text}}</span></div>
++                <div class="col-md-3 col-sm-6 col-xs-12">Diện tích: <span class="pm-info"> {{$prop->acreage}}</span></div>
++                <div class="col-md-6 col-sm-12 col-xs-12">Quận/Huyện: <span class="pm-info"> {{$prop->getDisctrictName()}}, Hồ Chí Minh</span></div>
+             </div>
+-        </a>
++        </div>
+     </div>
++    </a>
+ @endforeach
+ 
+ <div class="paging">
+Index: app/Modules/Core/BDS_SG24h/Repositories/WardRepositoryEloquent.php
+===================================================================
+--- app/Modules/Core/BDS_SG24h/Repositories/WardRepositoryEloquent.php	(revision 40)
++++ app/Modules/Core/BDS_SG24h/Repositories/WardRepositoryEloquent.php	(revision 41)
+@@ -54,6 +54,6 @@
+     public function getWardsCache($district_id)
+     {
+         // TODO: Implement getWardsCache() method.
+-        return $this->getAllWardsCache()->where('district_id',$district_id);
++        return $this->getAllWardsCache()->where('district_id',strval($district_id));
+     }
+ }
+Index: app/Modules/Core/Command/GenerateSiteMapCommand.php
+===================================================================
+--- app/Modules/Core/Command/GenerateSiteMapCommand.php	(revision 40)
++++ app/Modules/Core/Command/GenerateSiteMapCommand.php	(revision 41)
+@@ -62,11 +62,12 @@
+     protected $description = 'Generate SiteMap';
+ 
+     public function gen_sm_item($url, $domain='http://batdongsansg24h.com'){
+-        $template = '<sitemap><loc>%1$s</loc><lastmod>%2$s</lastmod></sitemap>';
++        $template = '<url><loc>%1$s</loc><lastmod>%2$s</lastmod></url>';
+         return str_replace('http://localhost',$domain, sprintf($template,$url,Carbon::now('ICT')->format('Y-m-d')));
+     }
+ 
+     public function gen_filter_sitemap(){
++        print 'processing generate filter sitemap';
+         $dists = $this->distRepo->getAllDistrictsCache();
+ 
+         $file = public_path().'/batdongsansg24h/sitemap/sitemap-filter.xml';
+@@ -76,21 +77,17 @@
+ 
+ 
+         foreach (Enum::$PROPERTY_TYPES as $index => $v) {
++            if($index == 0) continue;
++
+             $pt_alias = UtilHelper::slug($v);
+             $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_proptype',[$pt_alias, $index]));
+             file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
+ 
+             foreach ($dists as $dist){
+-                $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_district',[$dist->district_alias, $dist->id]));
+-                file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
+-
+                 $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_proptype_district',[$pt_alias, $dist->district_alias, $index, $dist->id]));
+                 file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
+ 
+                 foreach ($this->wardRepo->getWardsCache($dist->id) as $ward){
+-                    $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_district_ward',[$dist->district_alias, $ward->ward_alias, $dist->id, $ward->id]));
+-                    file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
+-
+                     $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_proptype_district_ward',[$pt_alias, $dist->district_alias, $ward->ward_alias, $index, $dist->id, $ward->id]));
+                     file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
+                 }
+@@ -102,11 +99,27 @@
+             }
+         }
+ 
++        foreach ($dists as $dist){
++            $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_district',[$dist->district_alias, $dist->id]));
++            file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
++
++            foreach ($this->wardRepo->getWardsCache($dist->id) as $ward){
++                $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_district_ward',[$dist->district_alias, $ward->ward_alias, $dist->id, $ward->id]));
++                file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
++            }
++
++            foreach ($this->streetRepo->getStreetsCache($dist->id) as $street){
++                $raw_sm_item = $this->gen_sm_item(route('Batdongsansg24hFilter.filter_proptype_street',[$pt_alias, $street->ward_alias, $dist->district_alias, $index, $street->id, $dist->id]));
++                file_put_contents($file, $raw_sm_item, FILE_APPEND | LOCK_EX);
++            }
++        }
++
+         $endFile =  '</urlset>';
+         file_put_contents($file, $endFile, FILE_APPEND | LOCK_EX);
+     }
+ 
+     public function gen_prop_sitemap(){
++        print 'processing generate prop sitemap';
+         $count = 0;
+         $take = 2000;
+         $max_times = 20;
+@@ -150,6 +163,10 @@
+     {
+         $type = $this->option('type');
+         switch ($type){
++            case 'all':
++                $this->gen_filter_sitemap();
++                $this->gen_prop_sitemap();
++                break;
+             case 'filter':
+                 $this->gen_filter_sitemap();
+                 break;
+Index: public/batdongsansg24h/css/app.css
+===================================================================
+--- public/batdongsansg24h/css/app.css	(revision 40)
++++ public/batdongsansg24h/css/app.css	(revision 41)
+@@ -73,6 +73,15 @@
+     color: #8e8e8e;
+ }
+ 
++.media-url{
++    color: #000000;
++}
++
++.media-url:hover{
++    text-decoration: none;
++    color: #000000;
++}
++
+ .bds-main-content .search-media{
+     padding: 12px;
+ }
+@@ -103,11 +112,6 @@
+     padding-right: 20px;
+ }
+ 
+-.bds-main-content .search-media a{
+-    text-decoration: none;
+-    color: #000000;
+-}
+-
+ .bds-main-content .paging{
+     text-align: center;
+ }

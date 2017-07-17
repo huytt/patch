@@ -1,0 +1,50 @@
+Index: app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php	(revision 52)
++++ app/Modules/Batdongsansg24h/Views/user/postMsg.blade.php	(revision 53)
+@@ -81,9 +81,9 @@
+                                     <div class="row">
+                                         <input type="hidden" name="requested_price_text" class="form-control">
+                                         <input type="hidden" step="0.01" name="requested_price_value" class="form-control">
+-                                        <div class="col-xs-4"><input type="number" step="0.01" name="requested_price" value="{{old('requested_price')}}" class="form-control"></div>
++                                        <div class="col-xs-4"><input type="number" step="0.01" placeholder="1.5" name="requested_price" value="{{old('requested_price')}}" class="form-control"></div>
+                                         <div class="col-xs-4">
+-                                            <?php $currency = ['tỷ' => 1000000000, 'triệu' => 1000000, 'Thỏa thuận' => -1]?>
++                                            <?php $currency = ['tỷ' => 1000000000, 'triệu' => 1000000, 'triệu/tháng' => 1000000, 'Thỏa thuận' => -1]?>
+                                             <select class="form-control" name="currency" id="form-field-select-1">
+                                                 @foreach($currency as $key => $value)
+                                                     <option value="{{$value}}" {{old('currency') == $value?'selected':''}}>{{$key}}</option>
+@@ -97,8 +97,8 @@
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"> Kích thước: </label>
+                                 <div class="col-sm-9">
+                                     <div class="row">
+-                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_width" value="{{old('property_width')}}" class="col-sm-12"></div>
+-                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_height" value="{{old('property_height')}}" class="col-sm-12"></div>
++                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_width" placeholder="3.5" value="{{old('property_width')}}" class="col-sm-12"></div>
++                                        <div class="col-sm-2 col-xs-3"><input type="number" step="0.01" name="property_height" placeholder="15.7" value="{{old('property_height')}}" class="col-sm-12"></div>
+                                         <div class="col-xs-6" style="line-height: 30px;">m² (Chiều ngang x Chiều dài)</div>
+                                         <input type="hidden" name="acreage">
+                                     </div>
+@@ -119,7 +119,7 @@
+                             <div class="form-group">
+                                 <label class="col-sm-3 control-label no-padding-right" for="form-field-1"></label>
+                                 <div class="col-sm-9">
+-                                    <p><strong style="color: #055699">Chú ý:</strong> Nếu dung lượng ảnh quá lớn hãy kích vào <a href="https://tinypng.com/" target="_blank">tinypng.com</a> để nén ảnh. Chúng tôi sẽ bỏ qua những ảnh không hợp lệ.</p>
++                                    <p><strong style="color: #055699">Chú ý:</strong> Nếu dung lượng ảnh quá lớn hãy kích vào <a href="https://tinypng.com/" target="_blank">tinypng.com</a> để nén ảnh. Chúng tôi sẽ bỏ qua những ảnh không hợp lệ</p>
+                                 </div>
+                             </div>
+ 
+Index: public/batdongsansg24h/js/userscreen.js
+===================================================================
+--- public/batdongsansg24h/js/userscreen.js	(revision 52)
++++ public/batdongsansg24h/js/userscreen.js	(revision 53)
+@@ -153,7 +153,8 @@
+                 requested_price_value.val(parseFloat(requested_price.val()) * currency_val);
+                 requested_price_text.val(requested_price.val() +' '+ currency.find('option:selected').text());
+             }
+-            acreage.val(parseFloat(property_width.val()) * parseFloat(property_height.val()) + 'm²');
++            var acr_cal = parseFloat(property_width.val()) * parseFloat(property_height.val());
++            acreage.val(acr_cal.toFixed(2) + 'm²');
+         });
+ 
+         $('#region-info select[name="district_id"]').on('change', function (e) {

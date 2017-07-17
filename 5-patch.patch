@@ -1,0 +1,69 @@
+Index: app/Modules/Batdongsansg24h/Controllers/FilterController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 35)
++++ app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 36)
+@@ -44,6 +44,10 @@
+         return $this->generate_search_filter_view($request, null, $distId, $wardId);
+     }
+ 
++    public function filter_proptype($pt_alias, $pt_code, Request $request){
++        return $this->generate_search_filter_view($request, $pt_code);
++    }
++
+     public function filter_proptype_district($pt_alias, $dis_alias, $pt_code, $distId, Request $request){
+         return $this->generate_search_filter_view($request, $pt_code, $distId);
+     }
+@@ -56,7 +60,7 @@
+         return $this->generate_search_filter_view($request, $pt_code, $dis_id, null, $streetId);
+     }
+ 
+-    public function generate_search_filter_view(Request $request, $pt_code, $distId, $wardId = null, $streetId = null){
++    public function generate_search_filter_view(Request $request, $pt_code, $distId = null, $wardId = null, $streetId = null){
+ //                dd($pt_alias, $dis_alias, $distId, $ward_alias, $pt_code, $distId, $wardId);
+         $condition = [];
+         $from_price = $request->input('from_price');
+@@ -115,6 +119,11 @@
+                 return Redirect::route('Batdongsansg24hFilter.filter_district',[$dname, $district_id,
+                     'from_price' => $from_price, 'to_price' => $to_price]);
+             }
++
++            if(!is_null($property_type_alias)){
++                return Redirect::route('Batdongsansg24hFilter.filter_proptype',[$property_type_alias, $property_type_code,
++                    'from_price' => $from_price, 'to_price' => $to_price]);
++            }
+ //        }
+ 
+         return view('Batdongsansg24h::home.search-filter');
+Index: app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 35)
++++ app/Modules/Batdongsansg24h/Views/partials/partialProperties.blade.php	(revision 36)
+@@ -24,5 +24,5 @@
+ @endforeach
+ 
+ <div class="paging">
+-    {!! $paginator->render() !!}
++    {!! $paginator->appends(Request::capture()->except('page'))->render() !!}
+ </div>
+\ No newline at end of file
+Index: app/Modules/Batdongsansg24h/routes.php
+===================================================================
+--- app/Modules/Batdongsansg24h/routes.php	(revision 35)
++++ app/Modules/Batdongsansg24h/routes.php	(revision 36)
+@@ -20,6 +20,7 @@
+         Route::get('/mua-ban-bat-dong-san-nha-dat-{dis_alias}/{distId}',['as'=>'Batdongsansg24hFilter.filter_district','uses' => 'FilterController@filter_district']);
+         Route::get('/mua-ban-bat-dong-san-nha-dat-{dis_alias}/{ward_alias}/{distId}/{wardId}',['as'=>'Batdongsansg24hFilter.filter_district_ward','uses' => 'FilterController@filter_district_ward']);
+ 
++        Route::get('/loc-pt/{pt_alias}/tp-hcm/{pt_code}',['as'=>'Batdongsansg24hFilter.filter_proptype','uses' => 'FilterController@filter_proptype']);
+         Route::get('/loc-pt-d/{pt_alias}/{dis_alias}/{pt_code}/{distId}',['as'=>'Batdongsansg24hFilter.filter_proptype_district','uses' => 'FilterController@filter_proptype_district']);
+         Route::get('/loc-pt-d-w/{pt_alias}/{ward_alias}/{dis_alias}/{pt_code}/{distId}/{wardId}',['as'=>'Batdongsansg24hFilter.filter_proptype_district_ward','uses' => 'FilterController@filter_proptype_district_ward']);
+         Route::get('/loc-pt-d-st/{pt_alias}/{street_alias}/{dis_alias}/{pt_code}/{streetId}/{distId}',['as'=>'Batdongsansg24hFilter.filter_proptype_street','uses' => 'FilterController@filter_proptype_street']);
+@@ -52,6 +53,8 @@
+         Route::get('/ajax-user-get-wards',['as'=>'Batdongsansg24hAjaxUser.getWards','uses' => 'Ajax\UserController@getWards']);
+         Route::get('/ajax-user-get-streets',['as'=>'Batdongsansg24hAjaxUser.getStreets','uses' => 'Ajax\UserController@getStreets']);
+ 
++        Route::get('/test3',['as'=>'Batdongsansg24hHome.test3','uses' => 'HomeController@test3']);
++
+ 
+ //        Route::get('/ping','HomeController@ping');
+ //

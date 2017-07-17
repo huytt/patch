@@ -1,0 +1,33 @@
+Index: app/Modules/Batdongsansg24h/Views/property/info.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 34)
++++ app/Modules/Batdongsansg24h/Views/property/info.blade.php	(revision 35)
+@@ -6,6 +6,8 @@
+ 
+ @section('title-section', $prop->property_title)
+ 
++<?php $medias = $prop->PropMedias(); ?>
++
+ @section('meta-SEO')
+     <meta name="abstract" content="Thông tin nhà đất Hồ Chí Minh">
+     <meta name="classification" content="Bất động sản Hồ Chí Minh">
+@@ -19,6 +21,11 @@
+     <meta name="keywords" content="Kênh, thông, tin, số, 1, về, bất, động, sản, {{$prop->property_title}}">
+     <meta property="og:locale" content="vi_VN">
+     <meta property="og:type" content="website">
++    @if(count($medias) > 0)
++    <meta property="og:image:width" content="600">
++    <meta property="og:image:height" content="315">
++    <meta property="og:image" content="{{$medias[0]->property_media_url}}">
++    @endif
+     <meta property="og:title" content="Nhà đất | Mua bán nhà đất | Cho thuê nhà đất | batdongsansg24h.com">
+     <meta property="og:description" content="{{$prop->getBriefDesc()}}">
+     <meta property="og:url" content="http://batdongsansg24h.com/">
+@@ -53,7 +60,6 @@
+                     </div>
+                 </div>
+ 
+-                <?php $medias = $prop->PropMedias(); ?>
+                 @if(count($medias) > 0)
+                     <div id="prop-meida-Carousel" class="carousel slide" data-ride="carousel">
+ 

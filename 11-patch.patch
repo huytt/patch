@@ -1,0 +1,70 @@
+Index: app/Modules/Batdongsansg24h/Controllers/UserController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 50)
++++ app/Modules/Batdongsansg24h/Controllers/UserController.php	(revision 51)
+@@ -270,9 +270,12 @@
+         try {
+             $target = '#signup-box';
+ 
+-            $this->validator->with($request->all())->passesOrFail(ValidatorInterface::RULE_CREATE);
++            $form_data = $request->all();
+ 
+-            $user = $this->userRepo->create($request->all());
++            $this->validator->with($form_data)->passesOrFail(ValidatorInterface::RULE_CREATE);
++            $form_data['date_created'] = Carbon::now('ICT');
++
++            $user = $this->userRepo->create($form_data);
+ 
+             $response = [
+                 'message' => 'User created.',
+Index: app/Modules/Batdongsansg24h/Views/user/login_register.blade.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Views/user/login_register.blade.php	(revision 50)
++++ app/Modules/Batdongsansg24h/Views/user/login_register.blade.php	(revision 51)
+@@ -216,14 +216,14 @@
+                                         <fieldset>
+                                             <label class="block clearfix">
+                                                 <span class="block input-icon input-icon-right">
+-                                                    <input type="email" class="form-control" name="email" placeholder="Email" />
++                                                    <input type="email" class="form-control" name="email" placeholder="Email" value="{{old('email')}}"/>
+                                                     <i class="ace-icon fa fa-envelope"></i>
+                                                 </span>
+                                             </label>
+ 
+                                             <label class="block clearfix">
+                                                 <span class="block input-icon input-icon-right">
+-                                                    <input type="text" class="form-control" name="name" placeholder="Họ và tên" />
++                                                    <input type="text" class="form-control" name="name" placeholder="Họ và tên" value="{{old('name')}}"/>
+                                                     <i class="ace-icon fa fa-user"></i>
+                                                 </span>
+                                             </label>
+@@ -237,7 +237,7 @@
+ 
+                                             <label class="block clearfix">
+                                                 <span class="block input-icon input-icon-right">
+-                                                    <input type="text" class="form-control" name="address" placeholder="Địa chỉ" />
++                                                    <input type="text" class="form-control" name="address" placeholder="Địa chỉ" value="{{old('address')}}"/>
+                                                     <i class="ace-icon fa fa-book"></i>
+                                                 </span>
+                                             </label>
+@@ -258,7 +258,7 @@
+ 
+                                             <label class="block clearfix">
+                                                 <span class="block input-icon input-icon-right">
+-                                                    <input type="text" class="form-control" name="phone" placeholder="Số điện thoại" />
++                                                    <input type="text" class="form-control" name="phone" placeholder="Số điện thoại" value="{{old('phone')}}"/>
+                                                     <i class="ace-icon fa fa-mobile"></i>
+                                                 </span>
+                                             </label>
+Index: app/Modules/DataModel/BDS_SG24h/Models/User.php
+===================================================================
+--- app/Modules/DataModel/BDS_SG24h/Models/User.php	(revision 50)
++++ app/Modules/DataModel/BDS_SG24h/Models/User.php	(revision 51)
+@@ -41,6 +41,7 @@
+         'name',
+         'phone',
+         'address',
++        'date_created',
+         'active',
+         'active_token',
+         'remember_token'

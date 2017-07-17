@@ -1,0 +1,274 @@
+Index: app/Modules/Batdongsansg24h/Controllers/FilterController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 59)
++++ app/Modules/Batdongsansg24h/Controllers/FilterController.php	(revision 60)
+@@ -15,6 +15,7 @@
+ use App\Modules\Core\BDS_SG24h\Repositories\StreetRepository;
+ use App\Modules\Core\BDS_SG24h\Repositories\WardRepository;
+ use App\Modules\Core\Constant;
++use App\Modules\Core\Inf\ISphinxSearchHelper;
+ use App\Modules\Core\Utils\UtilHelper;
+ use Illuminate\Routing\Controller;
+ use Redirect;
+@@ -29,18 +30,21 @@
+     protected $disRepo;
+     protected $wardRepo;
+     protected $streetRepo;
++    protected $search_engine;
+ 
+     public function __construct(
+         PropertyRepository $propertyRepository
+         , DistrictRepository $districtRepository
+         , WardRepository $wardRepository
+         , StreetRepository $streetRepository
++        , ISphinxSearchHelper $searchHelper
+     )
+     {
+         $this->propRepo = $propertyRepository;
+         $this->disRepo = $districtRepository;
+         $this->wardRepo = $wardRepository;
+         $this->streetRepo = $streetRepository;
++        $this->search_engine = $searchHelper;
+     }
+     
+     public function filter_district($dis_alias, $distId, Request $request){
+@@ -91,23 +95,24 @@
+             $condition['requested_price_value'] = $range;
+ 
+             $page = $request->input('page', 1);
+-            $sphinx = new SphinxSearch();
++//            $sphinx = new SphinxSearch();
+ //        $results = $sphinx->search('pham huu lau','bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_EXTENDED)->limit(20)->filter('district_id',7)->get();
+ //            $results = $sphinx->search($kw, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ANY)->limit(Constant::BDS_PER_PAGE_DEFAULT, $page - 1)->get();
+-            $sphinx = $sphinx->search($kw, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ALL)->setSortMode(SphinxClient::SPH_SORT_EXTENDED,'timestamp_on_market DESC');
+-            foreach ($condition as $field => $value) {
+-                if (is_array($value)) {
+-                    list($min, $max) = $value;
+-                    $sphinx = $sphinx->range($field,$min,$max);
+-                } else {
+-                    $sphinx = $sphinx->filter($field,$value);
+-                }
+-            }
+-            $results = $sphinx->limit(Constant::BDS_PER_PAGE_DEFAULT, $page - 1)->get();
+-            if(empty($results)) return view('Batdongsansg24h::error.search-not-found', compact('kw','curDist', 'curWard', 'curPt', 'curStreet', 'curFromPrice', 'curToPrice'));
++//            $sphinx = $sphinx->search($kw, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ALL)->setSortMode(SphinxClient::SPH_SORT_EXTENDED,'timestamp_on_market DESC');
++//            foreach ($condition as $field => $value) {
++//                if (is_array($value)) {
++//                    list($min, $max) = $value;
++//                    $sphinx = $sphinx->range($field,$min,$max);
++//                } else {
++//                    $sphinx = $sphinx->filter($field,$value);
++//                }
++//            }
++//            $results = $sphinx->limit(Constant::BDS_PER_PAGE_DEFAULT, $page - 1)->get();
++            $results = $this->search_engine->search($kw,$page,Constant::BDS_PER_PAGE_DEFAULT,$condition,'timestamp_on_market DESC');
++            if($results['total_found'] == 0) return view('Batdongsansg24h::error.search-not-found', compact('kw','curDist', 'curWard', 'curPt', 'curStreet', 'curFromPrice', 'curToPrice'));
+ //            dd($results, $results['total_found']);
+-            $props = $this->propRepo->findWhereInOrder('id', array_keys($results['matches']));
+-            $paginator = $this->propRepo->makePaginateByCollection($props, $results['total_found'],Constant::BDS_PER_PAGE_DEFAULT);
++//            $props = $this->propRepo->findWhereInOrder('id', array_keys($results['matches']));
++            $paginator = $this->propRepo->makePaginateByCollection($results['matches'], $results['total_found'],Constant::BDS_PER_PAGE_DEFAULT);
+         }
+ 
+         empty($from_price)?:array_push($condition,['requested_price_value','>=',$from_price]);
+Index: app/Modules/Batdongsansg24h/Controllers/PropertyController.php
+===================================================================
+--- app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 59)
++++ app/Modules/Batdongsansg24h/Controllers/PropertyController.php	(revision 60)
+@@ -12,6 +12,10 @@
+ use App\Modules\Batdongsansg24h\Enum;
+ use App\Modules\Core\BDS_SG24h\Repositories\DistrictRepository;
+ use App\Modules\Core\BDS_SG24h\Repositories\PropertyRepository;
++use App\Modules\Core\BDS_SG24h\Repositories\StreetRepository;
++use App\Modules\Core\BDS_SG24h\Repositories\WardRepository;
++use App\Modules\Core\Constant;
++use App\Modules\Core\Inf\ISphinxSearchHelper;
+ use App\Modules\Core\Utils\UtilHelper;
+ use Auth;
+ use Illuminate\Routing\Controller;
+@@ -21,11 +25,22 @@
+ {
+     protected $propRepo;
+     protected $distRepo;
+-
+-    public function __construct(PropertyRepository $propertyRepository, DistrictRepository $districtRepository)
++    protected $wardRepo;
++    protected $streetRepo;
++    protected $search_engine;
++
++    public function __construct(PropertyRepository $propertyRepository
++        ,DistrictRepository $districtRepository
++        ,WardRepository $wardRepository
++        ,StreetRepository $streetRepository
++        ,ISphinxSearchHelper $searchHelper
++    )
+     {
+         $this->propRepo = $propertyRepository;
+         $this->distRepo = $districtRepository;
++        $this->wardRepo = $wardRepository;
++        $this->streetRepo = $streetRepository;
++        $this->search_engine = $searchHelper;
+     }
+ 
+     public function info($id){
+@@ -37,16 +52,26 @@
+         $allowEdit = (isset($user) && ($user->id == $prop->owner_user_id || $user->phone == $prop->owner_user_phone));
+ //        $allowEdit = true;
+ 
+-        $relate_props = null;
++//        $relate_props = null;
+         $area_info = [];
+ 
+-        if($prop->street_id > 0){
+-            $relate_props = $this->propRepo->findWhereLimit(['street_id' => $prop->street_id, ['id','!=',$prop->id]],10);
+-        } else if(count($relate_props) < 3 && $prop->ward_id > 0) {
+-            $relate_props = $this->propRepo->findWhereLimit(['ward_id' => $prop->ward_id, ['id','!=',$prop->id]],10);
+-        } else {
+-            $relate_props = $this->propRepo->findWhereLimit(['district_id' => $prop->district_id, ['id','!=',$prop->id]],10);
+-        }
++        $kw = '';
++
++//        dd($prop);
++
++        empty($prop->street_id)?:$kw .= $this->streetRepo->getAllStreetsCache()->where('id', intval($prop->street_id))->first()->street_name;
++        empty($prop->ward_id)?:$kw .= ' '.$this->wardRepo->getAllWardsCache()->where('id', intval($prop->ward_id))->first()->ward_name;
++        empty($prop->district_id)?:$kw .= ' '.$this->distRepo->getAllDistrictsCache()->where('id', intval($prop->district_id))->first()->district_name;
++
++        $relate_props = $this->search_engine->search($kw, 1, 10, [['msg_sku', $prop->msg_sku, true]], 'timestamp_on_market DESC')['matches'];
++
++//        if($prop->street_id > 0){
++//            $relate_props = $this->propRepo->findWhereLimit(['street_id' => $prop->street_id, ['id','!=',$prop->id]],10);
++//        } else if(count($relate_props) < 3 && $prop->ward_id > 0) {
++//            $relate_props = $this->propRepo->findWhereLimit(['ward_id' => $prop->ward_id, ['id','!=',$prop->id]],10);
++//        } else {
++//            $relate_props = $this->propRepo->findWhereLimit(['district_id' => $prop->district_id, ['id','!=',$prop->id]],10);
++//        }
+ 
+         if($prop->district_id > 0){
+             $district = $this->distRepo->getAllDistrictsCache()->where('id', intval($prop->district_id))->first();
+Index: app/Modules/Core/Impl/SphinxSearchHelper.php
+===================================================================
+--- app/Modules/Core/Impl/SphinxSearchHelper.php	(nonexistent)
++++ app/Modules/Core/Impl/SphinxSearchHelper.php	(revision 60)
+@@ -0,0 +1,66 @@
++<?php
++/**
++ * Created by PhpStorm.
++ * User: huytt
++ * Date: 7/17/2017
++ * Time: 11:09 AM
++ */
++
++namespace App\Modules\Core\Impl;
++
++
++use App\Modules\Core\BDS_SG24h\Repositories\PropertyRepository;
++use App\Modules\Core\Constant;
++use App\Modules\Core\Inf\ISearchHelper;
++use App\Modules\Core\Inf\ISphinxSearchHelper;
++use sngrl\SphinxSearch\SphinxSearch;
++use Sphinx\SphinxClient;
++
++class SphinxSearchHelper implements ISphinxSearchHelper
++{
++    protected $propRepo;
++
++    public function __construct(PropertyRepository $propertyRepository)
++    {
++        $this->propRepo = $propertyRepository;
++    }
++
++    public function search($keyword, $page = 1, $perpage = null, array $filter_condition = [], $orderDescription = null)
++    {
++        !is_null($perpage)?:$perpage = Constant::BDS_PER_PAGE_DEFAULT;
++
++        $sphinx = new SphinxSearch();
++//        $results = $sphinx->search('pham huu lau','bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_EXTENDED)->limit(20)->filter('district_id',7)->get();
++//            $results = $sphinx->search($kw, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ANY)->limit(Constant::BDS_PER_PAGE_DEFAULT, $page - 1)->get();
++        $sphinx = $sphinx->search($keyword, 'bds_sg24h')->setMatchMode(SphinxClient::SPH_MATCH_ALL);
++//        $sphinx = $sphinx->setSortMode(SphinxClient::SPH_SORT_EXTENDED,'timestamp_on_market DESC');
++        if(!is_null($orderDescription)) $sphinx = $sphinx->setSortMode(SphinxClient::SPH_SORT_EXTENDED, $orderDescription);
++
++        foreach ($filter_condition as $field => $value) {
++            if (is_array($value)) {
++                switch (count($value)){
++                    case 2:
++                        list($min, $max) = $value;
++                        $sphinx = $sphinx->range($field,$min,$max);
++                        break;
++                    case 3:
++                        list($field, $val, $exclude) = $value;
++                        $sphinx = $sphinx->filter($field, $val, $exclude);
++                        break;
++                }
++            } else {
++                $sphinx = $sphinx->filter($field,$value);
++            }
++        }
++        $results = $sphinx->limit($perpage, $page - 1)->get();
++        if(empty($results)) return [
++            'matches' => [],
++            'total_found' => 0
++        ];
++//            dd($results, $results['total_found']);
++        return [
++            'matches' => $this->propRepo->findWhereInOrder('id', array_keys($results['matches'])),
++            'total_found' => $results['total_found']
++        ];
++    }
++}
+\ No newline at end of file
+Index: app/Modules/Core/Inf/ISearchHelper.php
+===================================================================
+--- app/Modules/Core/Inf/ISearchHelper.php	(nonexistent)
++++ app/Modules/Core/Inf/ISearchHelper.php	(revision 60)
+@@ -0,0 +1,15 @@
++<?php
++/**
++ * Created by PhpStorm.
++ * User: huytt
++ * Date: 7/17/2017
++ * Time: 11:07 AM
++ */
++
++namespace App\Modules\Core\Inf;
++
++
++interface ISearchHelper
++{
++    public function search($keyword, $page = 1, $perpage = 15, array $filter_condition = [], $orderDescription = null);
++}
+\ No newline at end of file
+Index: app/Modules/Core/Inf/ISphinxSearchHelper.php
+===================================================================
+--- app/Modules/Core/Inf/ISphinxSearchHelper.php	(nonexistent)
++++ app/Modules/Core/Inf/ISphinxSearchHelper.php	(revision 60)
+@@ -0,0 +1,15 @@
++<?php
++/**
++ * Created by PhpStorm.
++ * User: huytt
++ * Date: 7/17/2017
++ * Time: 11:07 AM
++ */
++
++namespace App\Modules\Core\Inf;
++
++
++interface ISphinxSearchHelper extends ISearchHelper
++{
++
++}
+\ No newline at end of file
+Index: app/Modules/Core/InfServiceProvider.php
+===================================================================
+--- app/Modules/Core/InfServiceProvider.php	(revision 59)
++++ app/Modules/Core/InfServiceProvider.php	(revision 60)
+@@ -24,6 +24,7 @@
+     public function register()
+     {
+         $this->app->bind(\App\Modules\Core\Inf\IEmailHandler::class, \App\Modules\Core\Impl\EmailHandler::class);
++        $this->app->bind(\App\Modules\Core\Inf\ISphinxSearchHelper::class, \App\Modules\Core\Impl\SphinxSearchHelper::class);
+         //:end-bindings:
+     }
+ }

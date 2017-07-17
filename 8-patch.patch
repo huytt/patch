@@ -1,0 +1,49 @@
+Index: app/Modules/Core/Command/GenerateSiteMapCommand.php
+===================================================================
+--- app/Modules/Core/Command/GenerateSiteMapCommand.php	(revision 46)
++++ app/Modules/Core/Command/GenerateSiteMapCommand.php	(revision 47)
+@@ -34,7 +34,7 @@
+      *
+      * @var string
+      */
+-    protected $signature = 'gen_sm:serve {--type=}';
++    protected $signature = 'gen_sm:serve {--type=} {--si=}';
+ 
+     protected $distRepo;
+     protected $wardRepo;
+@@ -118,13 +118,13 @@
+         file_put_contents($file, $endFile, FILE_APPEND | LOCK_EX);
+     }
+ 
+-    public function gen_prop_sitemap(){
++    public function gen_prop_sitemap($start_index = 0){
+         print 'processing generate prop sitemap';
+-        $count = 0;
+         $take = 2000;
+         $max_times = 20;
++        $count = $start_index * $max_times;
+         $total = $this->propRrepo->count();
+-        $quantity = 0;
++        $quantity = $start_index;
+ 
+         $handled = $count*$take;
+         $file = '';
+@@ -162,6 +162,7 @@
+     public function handle()
+     {
+         $type = $this->option('type');
++        $si = $this->option('si');
+         switch ($type){
+             case 'all':
+                 $this->gen_filter_sitemap();
+@@ -172,7 +173,9 @@
+                 break;
+             case 'prop':
+             default:
+-                $this->gen_prop_sitemap();
++                $si = !is_null($si) && is_numeric($si)?$si:0;
++                print $si;
++                $this->gen_prop_sitemap($si);
+                 break;
+         }
+     }
